@@ -23,6 +23,19 @@ The phone generates a new key whenever wireless capture is enabled. Disabling mu
 
 iOS Info.plist requires `NSLocalNetworkUsageDescription` and `NSBonjourServices` containing `_trackinspect._tcp`. Ask for local network access only when the user enables wireless capture. Keep the app in the foreground; this protocol does not provide background execution.
 
+### Copy and paste pairing
+
+A phone may offer one action that copies both its current address and key:
+
+```text
+TRACKING-INSPECTOR/1
+{"address":"192.168.20.30:54321","pairingCode":"00112233445566778899aabbccddeeff"}
+```
+
+The key above is a public example. Emit UTF-8 JSON with string fields `address` and `pairingCode`, preceded by the exact version line. The Mac accepts LF or CRLF and surrounding whitespace, limits input to 4 KiB, validates both fields, and connects with the same TLS transport. Unsupported versions, malformed addresses and invalid keys are rejected without echoing the pasted secret. This is clipboard text, not a registered URL scheme.
+
+Generate this text from a fresh ready-listener snapshot when the user copies; prefer a routable physical network address over a link-local address, and allow alternate addresses to be selected explicitly. Never advertise, log or persist this text. The Mac reads the clipboard only on the user's paste action and retains the key only in process memory.
+
 ## Request
 
 ```http

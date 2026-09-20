@@ -111,6 +111,11 @@ final class InspectorModel: ObservableObject {
         saveSelection()
     }
 
+    func addConnectionInfo(_ text: String) throws {
+        let info = try ConnectionInfo(text)
+        try addManualDevice(address: info.address.address, code: info.pairingCode)
+    }
+
     func removeManualDevice(_ id: String) {
         guard manualAddresses.contains(where: { $0.id == id }) else { return }
         channels.disable(id)

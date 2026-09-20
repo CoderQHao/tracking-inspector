@@ -43,12 +43,12 @@ private struct DeviceSidebar: View {
             Text("已选择 \(model.channels.generations.count) / 8 台")
                 .font(.subheadline).foregroundStyle(.secondary)
             Button { showingManualConnection = true } label: {
-                Label("手动连接…", systemImage: "plus")
+                Label("连接设备…", systemImage: "plus")
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if model.displayDevices.isEmpty {
-                        Text("尚未发现设备\n在手机测试选项中开启无线读取。自动发现不到时，点「手动连接」填写手机地址。")
+                        Text("尚未发现设备\n在手机埋点观察台复制连接信息，点「连接设备」粘贴即可连接。")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -57,7 +57,7 @@ private struct DeviceSidebar: View {
             }
             Divider()
             Text(model.discoveryStatus).font(.caption).foregroundStyle(.secondary)
-            Text("每台局域网设备需单独配对。自动发现依赖本地广播；跨子网时可手动连接。\n同一手机通常只选择一种连接，避免事件重复。")
+            Text("每台局域网设备需单独配对。自动发现不可用时，可粘贴手机连接信息。\n同一手机通常只选择一种连接，避免事件重复。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -104,32 +104,54 @@ private struct ManualConnectionSheet: View {
     @State private var address = ""
     @State private var code = ""
     @State private var error = ""
+    @State private var manualExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("手动连接设备").font(.title2.bold())
-            Text("粘贴手机埋点观察台中的连接地址。无需自动发现，但两台设备必须能通过网络互相访问。")
+            Text("连接设备").font(.title2.bold())
+            Text("在手机「埋点观察台」点击「复制连接信息」，然后在这里粘贴并连接。")
                 .font(.callout).foregroundStyle(.secondary)
-            TextField("IPv4 地址:端口", text: $address).textFieldStyle(.roundedBorder)
-            SecureField("32 位配对码", text: $code).textFieldStyle(.roundedBorder)
-            Text("地址会保存在本机，配对码仅保留在当前进程。手机重新开启无线读取后，地址或配对码可能变化。")
+            Button {
+                guard let text = NSPasteboard.general.string(forType: .string) else {
+                    error = "剪贴板中没有连接信息，请先在手机复制。"
+                    return
+                }
+                connect { try model.addConnectionInfo(text) }
+            } label: {
+                Label("粘贴并连接", systemImage: "doc.on.clipboard").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.large)
+            DisclosureGroup("手动填写地址和配对码", isExpanded: $manualExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("IPv4 地址:端口", text: $address).textFieldStyle(.roundedBorder)
+                    SecureField("32 位配对码", text: $code).textFieldStyle(.roundedBorder)
+                    Button("连接此地址") { connectManually() }
+                        .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || code.isEmpty)
+                }
+                .padding(.top, 10)
+                .onSubmit { connectManually() }
+            }
+            Text("两台设备需能通过局域网互相访问。地址会保存在本机，Mac 退出后需重新配对；手机重新开启无线时，请复制新的连接信息。")
                 .font(.caption).foregroundStyle(.secondary)
             if !error.isEmpty { Text(error).font(.callout).foregroundStyle(.red) }
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("连接") {
-                    do {
-                        try model.addManualDevice(address: address, code: code)
-                        dismiss()
-                    } catch { self.error = error.localizedDescription }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || code.isEmpty)
             }
         }
         .padding(24)
         .frame(width: 440)
+    }
+
+    private func connectManually() {
+        connect { try model.addManualDevice(address: address, code: code) }
+    }
+
+    private func connect(_ action: () throws -> Void) {
+        do {
+            try action()
+            dismiss()
+        } catch { self.error = error.localizedDescription }
     }
 }
 

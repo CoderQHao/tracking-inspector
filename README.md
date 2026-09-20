@@ -7,7 +7,7 @@
 一个用于查看 iOS Debug 埋点的 macOS 桌面应用。同时连接多台设备查看事件、搜索任意参数、按设备、页面和动作筛选，检查字段或原始 JSON，并通过系统保存面板导出。
 
 - **USB**：连接并信任 Mac，运行已接入采集协议的 Debug App，选择 USB 设备。
-- **局域网**：手机开启无线采集，Mac 自动发现 Bonjour 设备；粘贴手机上的配对码后连接。自动发现不可用时，可手动填写手机的 IP 和端口。
+- **局域网**：手机复制完整连接信息，Mac 点击「粘贴并连接」即可配对。也支持 Bonjour 自动发现及手动填写 IP、端口和配对码。
 - **独立运行**：使用系统的 USB 服务、Network.framework 和 WKWebView，不需要 Python、Homebrew、浏览器服务或第三方运行时。
 - **多设备**：最多同时连接 8 台，独立配对、读取、重连和管理会话；慢设备不会阻塞其他设备。
 
@@ -15,7 +15,7 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/CoderQHao/tracking-inspector/releases/latest) 下载 `Tracking-Inspector-0.2.2-universal.dmg`，打开后将应用拖到 `Applications`。DMG 同时支持 Apple Silicon 和 Intel；运行不需要开发环境。
+从 [GitHub Releases](https://github.com/CoderQHao/tracking-inspector/releases/latest) 下载 `Tracking-Inspector-0.2.3-universal.dmg`，打开后将应用拖到 `Applications`。DMG 同时支持 Apple Silicon 和 Intel；运行不需要开发环境。
 
 当前是 ad-hoc 签名的开发版本，尚未经过 Developer ID 签名与 Apple 公证；其他 Mac 下载后可能被 Gatekeeper 拦截。Release 提供 `SHA256SUMS` 校验文件，签名与公证仍是后续正式分发需要补齐的部分。
 
@@ -31,15 +31,21 @@
 
 > 截图来自实际运行的 Mac 应用，事件由独立开发测试端生成，不包含真实埋点。正式应用没有内置模拟设备或演示数据。
 
+一次粘贴即可连接；旧版采集端也可以展开手动填写。
+
+![粘贴连接信息及兼容的手动填写入口](Docs/images/connect-device.png)
+
 ## 使用
 
 1. 打开 `Tracking Inspector.app`。
 2. USB：连接手机、解锁并信任 Mac，在手机上运行 Debug App。只有一台 USB 设备且没有历史选择时会自动选中。
-3. 无线：Mac 和手机连接可互通的局域网，在手机调试入口开启无线读取，允许局域网访问。在左侧勾选对应局域网设备，粘贴 32 位配对码并点击「配对」。自动发现不到时，点击「手动连接…」，填写手机显示的 `IPv4 地址:端口` 和配对码。
+3. 无线：Mac 和手机连接可互通的局域网，在手机调试入口开启无线读取，允许局域网访问。手机点击「复制连接信息」，将完整内容复制到 Mac 剪贴板后，在 Mac 点击「连接设备…」→「粘贴并连接」。支持通用剪贴板的设备可直接跨设备粘贴；其他情况下可自行将这段信息传到 Mac。
 4. 勾选多台设备即可同时接收，事件流按 Mac 接收顺序合并，并显示来源设备。设备时钟可能不一致，不将手机时间当作跨设备的严格时序。
 5. 使用「全部设备」下拉框聚焦某台设备；`⌘K` 搜索。「清空此设备」仅清理当前设备，「清空全部」清理全部已选设备。「导出 JSON」导出当前筛选结果，每条记录保留设备 ID、名称和会话。
 
 同一手机的 USB、Bonjour 和手动地址视为独立连接；通常只选择其中一种，避免同一事件出现多次。
+
+旧版采集端仍可使用：展开连接面板的「手动填写地址和配对码」，分别填写 `IPv4 地址:端口` 与 32 位配对码；或勾选自动发现的局域网设备并配对。连接信息含有配对码，只应粘贴到自己信任的观察台。App 不自动读取剪贴板，只在点击「粘贴并连接」时读取。
 
 Bonjour 不需要固定 IP。手动地址会保存到本机，手机换网络或重新开启无线后，IP 或端口可能改变，需要移除旧地址并填写新地址。设备选择会记住，断线后等待原连接，不会自动选择其他设备。某台 App 重启只清空它自己的旧会话，不影响其他设备。取消勾选会移除该设备当前缓存，再次勾选时重新读取手机保留的事件。断点暂停、切入后台或系统挂起时可能暂时无法读取，恢复前台运行后自动重连。
 
@@ -63,7 +69,7 @@ bash Scripts/build-dmg.sh
 
 - `dist/Tracking Inspector.app`
 - `dist/Tracking-Inspector.zip`
-- `dist/Tracking-Inspector-0.2.2-universal.dmg`（运行 DMG 脚本后）
+- `dist/Tracking-Inspector-0.2.3-universal.dmg`（运行 DMG 脚本后）
 - `dist/SHA256SUMS`
 
 默认使用 ad-hoc 签名，适合本地开发。仓库产物尚未做 Developer ID 签名与 Apple 公证；下载到其他 Mac 时，Gatekeeper 可能拦截。正式分发需使用自己的 Developer ID 并完成公证，脚本支持 `SIGNING_IDENTITY`，不会自动选择证书或执行公证。
