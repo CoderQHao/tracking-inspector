@@ -12,46 +12,92 @@ import InspectorCore
 import Network
 
 struct InspectorDevice: Identifiable, Equatable {
-    enum Transport: Equatable { case usb(String), wireless(NWEndpoint), demo }
+    enum Transport: Equatable { case usb(String), wireless(NWEndpoint), unavailable }
     let id: String
     let name: String
     let transport: Transport
+
+    var mode: String {
+        switch transport {
+        case .usb: "usb"
+        case .wireless: "wifi"
+        case .unavailable: id.hasPrefix("wifi:") ? "wifi" : "usb"
+        }
+    }
 }
 
 @MainActor
 final class InspectorModel: ObservableObject {
-    @Published var devices: [InspectorDevice] = []
-    @Published var selection: String = UserDefaults.standard.string(forKey: "selectedDevice") ?? "" {
-        didSet {
-            guard oldValue != selection else { return }
-            generation += 1
-            activeFetch?.cancel()
-            pairingCode = keys[selection] ?? ""
-            UserDefaults.standard.set(selection, forKey: "selectedDevice")
-        }
-    }
-
-    @Published var pairingCode = ""
+    @Published private(set) var devices: [InspectorDevice] = []
+    @Published private(set) var channels = CaptureChannels()
+    @Published private(set) var statuses: [String: String] = [:]
     @Published var discoveryStatus = "正在查找设备…"
-    @Published var connectionStatus = "等待选择设备"
     private var usb: [InspectorDevice] = []
     private var wireless: [InspectorDevice] = []
     private var keys: [String: String] = [:]
+    private var names: [String: String]
     private var browser: NWBrowser?
     private var timer: Timer?
     private var refreshing = false
-    private var generation = 0
-    private var activeFetch: Task<[String: Any], Error>?
-    private let demoStart = Date().timeIntervalSince1970
-    private let demoSession = "demo-" + UUID().uuidString
+    private var autoSelect: Bool
+    private var requests: [String: (generation: String, task: Task<[String: Any], Error>)] = [:]
 
-    var selectedDevice: InspectorDevice? {
-        devices.first { $0.id == selection }
+    init() {
+        let defaults = UserDefaults.standard
+        names = defaults.dictionary(forKey: "deviceNames") as? [String: String] ?? [:]
+        let saved = defaults.stringArray(forKey: "enabledDevices")?.filter { !["demo", "demo-a", "demo-b"].contains($0) }
+        let legacy = defaults.string(forKey: "selectedDevice").flatMap { $0.isEmpty || $0 == "demo" ? nil : $0 }
+        autoSelect = saved == nil && legacy == nil
+        for id in (saved ?? legacy.map { [$0] } ?? []).prefix(CaptureChannels.limit) {
+            try? channels.enable(id)
+        }
     }
 
-    var needsPairing: Bool {
-        if case .wireless = selectedDevice?.transport { return true }
-        return false
+    var displayDevices: [InspectorDevice] {
+        let known = Set(devices.map(\.id))
+        let missing = channels.generations.keys.filter { !known.contains($0) }.sorted().map { id in
+            InspectorDevice(id: id, name: names[id] ?? "USB · \(id.suffix(8))", transport: .unavailable)
+        }
+        return devices + missing
+    }
+
+    func isEnabled(_ id: String) -> Bool {
+        channels.generations[id] != nil
+    }
+
+    func status(_ id: String) -> String {
+        statuses[id] ?? (isEnabled(id) ? "等待连接" : "未连接")
+    }
+
+    func setEnabled(_ enabled: Bool, device: InspectorDevice) {
+        autoSelect = false
+        if enabled {
+            do { try channels.enable(device.id); names[device.id] = device.name }
+            catch { setStatus(error.localizedDescription, for: device.id) }
+        } else {
+            channels.disable(device.id)
+            cancelRequest(device.id)
+            statuses.removeValue(forKey: device.id)
+        }
+        saveSelection()
+    }
+
+    func pair(_ id: String, code: String) {
+        guard isEnabled(id) else { return }
+        do {
+            _ = try WirelessSecurity.key(code)
+            keys[id] = code
+            channels.renew(id)
+            cancelRequest(id)
+            setStatus("正在验证配对…", for: id)
+        } catch { setStatus(error.localizedDescription, for: id) }
+    }
+
+    func channelSnapshot() -> [[String: Any]] {
+        displayDevices.compactMap { device in
+            guard let generation = channels.generations[device.id] else { return nil }
+            return ["id": device.id, "name": device.name, "generation": generation, "mode": device.mode]
+        }
     }
 
     func start() {
@@ -62,7 +108,7 @@ final class InspectorModel: ObservableObject {
             Task { @MainActor in
                 self?.wireless = results.compactMap { result in
                     guard case let .service(name, type, domain, _) = result.endpoint,
-                          type == InspectorProtocol.serviceType else { return nil }
+                          type.trimmingCharacters(in: CharacterSet(charactersIn: ".")) == InspectorProtocol.serviceType else { return nil }
                     return InspectorDevice(id: "wifi:\(name)@\(domain)", name: "Wi-Fi · \(name)", transport: .wireless(result.endpoint))
                 }.sorted { $0.name < $1.name }
                 self?.mergeDevices()
@@ -99,81 +145,60 @@ final class InspectorModel: ObservableObject {
         }
     }
 
-    func pair() {
-        do {
-            _ = try WirelessSecurity.key(pairingCode)
-            keys[selection] = pairingCode
-            generation += 1
-            activeFetch?.cancel()
-            connectionStatus = "正在验证配对并连接…"
-        } catch { connectionStatus = error.localizedDescription }
-    }
-
     private func mergeDevices() {
-        let updated = usb + wireless + [InspectorDevice(id: "demo", name: "界面演示（模拟数据）", transport: .demo)]
+        var seen: Set<String> = []
+        let updated = (usb + wireless).filter { seen.insert($0.id).inserted }
         if devices != updated { devices = updated }
-        if selection.isEmpty, usb.count == 1 { selection = usb[0].id }
-        // Retain a disappeared selection. Never silently switch to another device.
+        if autoSelect, usb.count == 1 { setEnabled(true, device: usb[0]) }
     }
 
-    func fetch(after: Int, session: String) async -> [String: Any] {
-        let sourceID = selection
-        let revision = generation
+    func fetch(deviceID: String, generation: String, after: Int, session: String) async -> [String: Any] {
+        let identity: [String: Any] = ["sourceID": deviceID, "generation": generation]
+        guard channels.accepts(deviceID, generation: generation) else { return identity.merging(["error": "连接已更新"]) { _, new in new } }
         do {
-            guard let device = selectedDevice else {
-                throw InspectorFailure(selection.isEmpty ? "请在窗口顶部选择设备。USB 需运行 Debug App；无线需在手机内开启埋点观察台。" : "选中的设备已断开，正在等待同一设备重新连接。")
+            guard let device = devices.first(where: { $0.id == deviceID }) else {
+                throw InspectorFailure("设备已断开，等待同一设备重新连接。")
             }
-            let prefix = sourceID + "|"
-            let sameSource = session.hasPrefix(prefix)
-            let cursor = sameSource ? after : 0
-            let rawSession = sameSource ? String(session.dropFirst(prefix.count)) : ""
-            let code = keys[sourceID] ?? ""
-            let demo = demoSnapshot(after: cursor, session: rawSession)
+            guard requests[deviceID] == nil else { throw InspectorFailure("正在读取上一批事件。") }
+            let code = keys[deviceID] ?? ""
             let operation = Task<[String: Any], Error> {
                 switch device.transport {
                 case let .usb(serial):
                     return try await Task.detached(priority: .utility) {
-                        try USBMuxClient.fetch(serial: serial, after: cursor, session: rawSession)
+                        try USBMuxClient.fetch(serial: serial, after: after, session: session)
                     }.value
                 case let .wireless(endpoint):
-                    guard !code.isEmpty else { throw InspectorFailure("请粘贴手机 Debug 面板上的配对码，然后点击「配对」。") }
-                    return try await WirelessTransport.fetch(endpoint: endpoint, code: code, after: cursor, session: rawSession)
-                case .demo: return demo
+                    guard !code.isEmpty else { throw InspectorFailure("请填写此设备的配对码并点击「配对」。") }
+                    return try await WirelessTransport.fetch(endpoint: endpoint, code: code, after: after, session: session)
+                case .unavailable: throw InspectorFailure("设备已断开。")
                 }
             }
-            activeFetch = operation
+            requests[deviceID] = (generation, operation)
+            defer { if requests[deviceID]?.generation == generation { requests.removeValue(forKey: deviceID) } }
             var result = try await operation.value
-            guard revision == generation, sourceID == selection else { throw CancellationError() }
-            let mode: String
-            switch device.transport { case .usb: mode = "usb"; case .wireless: mode = "wifi"; case .demo: mode = "demo" }
-            result["session"] = prefix + (result["session"] as? String ?? "")
-            result["selectionID"] = sourceID
-            result["connection"] = ["mode": mode, "device": device.name]
-            connectionStatus = mode == "demo" ? "模拟数据" : "已连接"
+            guard channels.accepts(deviceID, generation: generation) else { throw CancellationError() }
+            result.merge(identity) { _, new in new }
+            result["connection"] = ["mode": device.mode, "device": device.name]
+            setStatus("已连接", for: deviceID)
             return result
         } catch {
-            guard revision == generation, sourceID == selection else {
-                return ["error": "连接已切换，正在读取当前设备。", "selectionID": selection]
-            }
-            let message = error is CancellationError ? "连接已切换，正在读取当前设备。" : error.localizedDescription
-            connectionStatus = message
-            return ["error": message, "selectionID": selection]
+            let message = error is CancellationError ? "连接已更新" : error.localizedDescription
+            if channels.accepts(deviceID, generation: generation) { setStatus(message, for: deviceID) }
+            return identity.merging(["error": message]) { _, new in new }
         }
     }
 
-    private func demoSnapshot(after cursor: Int, session: String) -> [String: Any] {
-        let latest = 8 + Int((Date().timeIntervalSince1970 - demoStart) / 3)
-        let cursor = session == demoSession ? cursor : 0
-        let lower = max(1, latest - 499, cursor + 1)
-        let upper = min(latest, lower + 99)
-        let events: [[String: Any]] = lower <= upper ? (lower ... upper).map { id in
-            let name = id.isMultiple(of: 3) ? "button_click" : "screen_view"
-            return ["id": id, "timestamp": demoStart + Double(id - 8) * 3, "name": name,
-                    "payload": ["event_info": ["event": name, "action": id.isMultiple(of: 3) ? "CLICK" : "VIEW", "current_page_name": "DEMO_PAGE"],
-                                "content_info": ["id": "sample-item", "title": "这是一条模拟事件", "source": "demo"]]]
-        } : []
-        return ["protocolVersion": 1, "session": demoSession, "events": events,
-                "oldestID": max(1, latest - 499), "latestID": latest, "nextCursor": events.last?["id"] ?? latest,
-                "capacity": 500, "dropped": 0, "app": ["bundleID": "example.debug", "version": "1.0", "build": "DEMO"]]
+    private func cancelRequest(_ id: String) {
+        requests.removeValue(forKey: id)?.task.cancel()
+    }
+
+    private func setStatus(_ value: String, for id: String) {
+        if statuses[id] != value { statuses[id] = value }
+    }
+
+    private func saveSelection() {
+        let ids = channels.generations.keys.sorted()
+        UserDefaults.standard.set(ids, forKey: "enabledDevices")
+        UserDefaults.standard.set(names.filter { ids.contains($0.key) }, forKey: "deviceNames")
     }
 }

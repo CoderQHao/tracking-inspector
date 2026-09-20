@@ -9,8 +9,11 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift test --build-system native --enable-swift-testing --disable-xctest
       - run: node --test Tests/web-model.test.mjs
-      - run: bash Scripts/build-app.sh --universal
+      - run: bash Scripts/build-dmg.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Tracking-Inspector-macOS
-          path: dist/Tracking-Inspector.zip
+          path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/SHA256SUMS

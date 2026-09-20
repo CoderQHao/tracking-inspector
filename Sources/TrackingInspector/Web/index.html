@@ -14,14 +14,15 @@
     <div class="header-right"><span id="mode" class="pill">DEBUG</span><span id="status" class="status" role="status">正在连接…</span></div>
   </header>
   <main>
-    <section class="intro"><div><h2>实时事件</h2><p>查看客户端交给埋点 SDK 的事件与参数。</p></div><div class="session-info"><span class="subtle">当前会话</span><strong id="app-info">等待 Debug App</strong><span id="device-info">在顶部选择 USB 或无线设备</span></div></section>
+    <section class="intro"><div><h2>实时事件</h2><p>查看客户端交给埋点 SDK 的事件与参数。</p></div><div class="session-info"><span class="subtle">设备与会话</span><strong id="app-info">等待 Debug App</strong><span id="device-info">在左侧勾选 USB 或无线设备</span></div></section>
     <section class="toolbar" aria-label="筛选和操作">
       <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索事件名、页面、ID 或任意参数…" aria-label="搜索事件和参数"><kbd>⌘ K</kbd></label>
+      <select id="device" aria-label="筛选设备"><option value="">全部设备</option></select>
       <select id="action" aria-label="筛选动作"><option value="">全部动作</option></select>
       <select id="page" aria-label="筛选页面"><option value="">全部页面</option></select>
       <button id="pause">暂停滚动更新</button><button id="clear">清空</button><button id="export" class="primary">导出 JSON ↗</button>
     </section>
-    <div id="notice" class="notice" role="status">在窗口顶部选择设备；无线连接需要手机上的配对码。</div>
+    <div id="notice" class="notice" role="status">在左侧勾选多台设备；无线设备分别填写配对码。</div>
     <section class="workspace">
       <div class="feed">
         <div class="panel-heading"><h3>事件流 <span id="count" class="counter">0</span></h3><span id="live-label" class="live">● LIVE</span></div>

@@ -60,14 +60,18 @@ final class WebBridge: NSObject, WKScriptMessageHandlerWithReply, WKNavigationDe
             return
         }
         switch command {
+        case "channels":
+            replyHandler(model.channelSnapshot(), nil)
         case "fetch":
-            guard let after = value["after"] as? Int, after >= 0,
+            guard let deviceID = value["deviceID"] as? String, deviceID.utf8.count < 512,
+                  let generation = value["generation"] as? String, generation.utf8.count < 128,
+                  let after = value["after"] as? Int, after >= 0,
                   let session = value["session"] as? String, session.utf8.count < 1024
             else {
                 replyHandler(nil, "无效的读取参数。")
                 return
             }
-            Task { await replyHandler(model.fetch(after: after, session: session), nil) }
+            Task { await replyHandler(model.fetch(deviceID: deviceID, generation: generation, after: after, session: session), nil) }
         case "copy":
             guard let text = value["text"] as? String, text.utf8.count <= 1024 * 1024 else {
                 replyHandler(nil, "复制内容超限。")

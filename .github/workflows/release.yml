@@ -1,0 +1,28 @@
+name: Publish release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)
+          test "$RELEASE_TAG" = "v$version"
+          test -f "Docs/releases/$RELEASE_TAG.md"
+      - run: swift test --build-system native --enable-swift-testing --disable-xctest
+      - run: node --test Tests/web-model.test.mjs
+      - run: bash Scripts/build-dmg.sh
+      - name: Publish DMG and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.dmg dist/Tracking-Inspector.zip dist/SHA256SUMS \
+            --verify-tag --title "Tracking Inspector $RELEASE_TAG" --notes-file "Docs/releases/$RELEASE_TAG.md"

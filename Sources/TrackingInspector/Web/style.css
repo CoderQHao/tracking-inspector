@@ -684,3 +684,11 @@ pre {
     display:none;
   }
 }
+
+/* The native device sidebar leaves the event workspace about 900–1100 px wide. */
+.toolbar { flex-wrap: wrap; }
+.toolbar .search { flex-basis: 100%; }
+.device-label { color: #167d82; font-size: 10px; font-weight: 600; margin-bottom: 8px; overflow-wrap: anywhere; }
+.notice { max-height: 88px; overflow-y: auto; }
+header { padding: 0 24px; }
+main { padding-left: 24px; padding-right: 24px; }
