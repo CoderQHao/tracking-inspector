@@ -17,7 +17,7 @@ jobs:
           test "$RELEASE_TAG" = "v$version"
           test -f "Docs/releases/$RELEASE_TAG.md"
       - run: swift test --build-system native --enable-swift-testing --disable-xctest
-      - run: node --test Tests/web-model.test.mjs
+      - run: node --test Tests/*.test.mjs
       - run: bash Scripts/build-dmg.sh
       - name: Publish DMG and checksums
         env:

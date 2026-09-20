@@ -15,7 +15,9 @@ private final class FixtureServer: @unchecked Sendable {
     let code: String
     private let queue: DispatchQueue
     private let listener: NWListener
+    private let alternateListener: NWListener
     private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private let deviceID = UUID().uuidString
     private var session = UUID().uuidString
     private var started = Date()
     private var paused = false
@@ -25,6 +27,7 @@ private final class FixtureServer: @unchecked Sendable {
         self.code = code
         queue = DispatchQueue(label: name)
         listener = try NWListener(using: WirelessSecurity.parameters(code: code), on: .any)
+        alternateListener = try NWListener(using: WirelessSecurity.parameters(code: code), on: .any)
         listener.service = .init(name: name, type: InspectorProtocol.serviceType)
         listener.stateUpdateHandler = { [weak listener] state in
             if case .ready = state, let port = listener?.port {
@@ -32,6 +35,14 @@ private final class FixtureServer: @unchecked Sendable {
                 fflush(stdout)
             }
         }
+        alternateListener.stateUpdateHandler = { [weak alternateListener] state in
+            if case .ready = state, let port = alternateListener?.port {
+                print("\(name) alternate address (same identity): 127.0.0.1:\(port.rawValue)")
+                fflush(stdout)
+            }
+        }
+        alternateListener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
+        alternateListener.start(queue: queue)
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         listener.start(queue: queue)
     }
@@ -83,7 +94,7 @@ private final class FixtureServer: @unchecked Sendable {
                                     "content_info": ["id": "sample-episode-042", "title": "A Walk Through the City", "source": "recommendation"],
                                     "extra": ["quality": "high", "playback_speed": 1.25], "test_only": true]]
             } : []
-            let value: [String: Any] = ["protocolVersion": 1, "session": session, "oldestID": max(1, latest - 499),
+            let value: [String: Any] = ["protocolVersion": 1, "deviceID": deviceID, "session": session, "oldestID": max(1, latest - 499),
                                         "latestID": latest, "nextCursor": events.last?["id"] ?? latest, "events": events,
                                         "capacity": 500, "dropped": 0, "app": ["bundleID": "example.fixture", "version": "test", "build": name]]
             guard let body = try? JSONSerialization.data(withJSONObject: value) else { connection.cancel(); return }

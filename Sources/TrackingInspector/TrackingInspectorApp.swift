@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import InspectorCore
 import SwiftUI
 
 @main
@@ -57,7 +58,7 @@ private struct DeviceSidebar: View {
             }
             Divider()
             Text(model.discoveryStatus).font(.caption).foregroundStyle(.secondary)
-            Text("每台局域网设备需单独配对。自动发现不可用时，可粘贴手机连接信息。\n同一手机通常只选择一种连接，避免事件重复。")
+            Text("每台局域网设备需单独配对。自动发现不可用时，可粘贴手机连接信息。\n连接验证后，同一手机自动合并；优先 USB，断开后尝试已配对的局域网。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -78,7 +79,8 @@ private struct DeviceRow: View {
                 .font(.system(size: 12, weight: .medium))
             Text(model.status(device.id)).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if device.mode != "usb", model.isEnabled(device.id) {
+            Text(model.transportSummary(device.id)).font(.caption2).foregroundStyle(.secondary)
+            if model.hasWireless(device.id), model.isEnabled(device.id) {
                 SecureField("此设备的配对码", text: $pairingCode)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { model.pair(device.id, code: pairingCode) }
@@ -86,8 +88,8 @@ private struct DeviceRow: View {
                 Button("配对") { model.pair(device.id, code: pairingCode) }
                     .accessibilityLabel("配对 \(device.name)")
             }
-            if device.id.hasPrefix("manual:") {
-                Button("移除此地址") { model.removeManualDevice(device.id) }
+            ForEach(model.manualEndpoints(for: device.id)) { endpoint in
+                Button("移除 \(endpoint.name)") { model.removeManualDevice(endpoint.id) }
                     .font(.caption)
             }
         }

@@ -53,6 +53,7 @@ All values below are fictional:
 ```json
 {
   "protocolVersion": 1,
+  "deviceID": "D3AC3C42-20AA-450E-B962-5F6F4CDF4D25",
   "session": "random-id-per-app-launch",
   "oldestID": 1,
   "latestID": 1,
@@ -72,6 +73,7 @@ All values below are fictional:
 }
 ```
 
+- `deviceID`: optional anonymous UUID, stable across launches of one app installation and identical on USB and TLS snapshots. Generate locally; do not send a user/account identifier. The Mac scopes it by `app.bundleID` and learns it only after a successful authenticated read. Older emitters without this field are grouped by bundle and session.
 - `session`: nonempty ID, at most 128 UTF-8 bytes, new for each emitter process.
 - Event IDs: increasing integers starting at 1, unique within the session, no greater than JavaScript's safe integer limit minus one.
 - `oldestID`: first retained event ID, or `latestID + 1` when empty.

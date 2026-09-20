@@ -6,6 +6,7 @@
   <title>Tracking Inspector</title>
   <link rel="stylesheet" href="style.css">
   <script defer src="model.js"></script>
+  <script defer src="analysis.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
@@ -14,14 +15,23 @@
     <div class="header-right"><span id="mode" class="pill">DEBUG</span><span id="status" class="status" role="status">正在连接…</span></div>
   </header>
   <main>
-    <section class="intro"><div><h2>实时事件</h2><p>查看客户端交给埋点 SDK 的事件与参数。</p></div><div class="session-info"><span class="subtle">设备与会话</span><strong id="app-info">等待 Debug App</strong><span id="device-info">在左侧勾选 USB 或无线设备</span></div></section>
+    <section class="intro"><div><h2 id="workspace-title">实时事件</h2><p>查看客户端交给埋点 SDK 的事件与参数。</p></div><div class="session-info"><span class="subtle">设备与会话</span><strong id="app-info">等待 Debug App</strong><span id="device-info">在左侧勾选 USB 或无线设备</span></div></section>
     <section class="toolbar" aria-label="筛选和操作">
-      <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索事件名、页面、ID 或任意参数…" aria-label="搜索事件和参数"><kbd>⌘ K</kbd></label>
+      <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="1000" placeholder="搜索事件名、页面、ID 或任意参数…" aria-label="搜索事件和参数"><kbd>⌘ K</kbd></label>
       <select id="device" aria-label="筛选设备"><option value="">全部设备</option></select>
       <select id="action" aria-label="筛选动作"><option value="">全部动作</option></select>
       <select id="page" aria-label="筛选页面"><option value="">全部页面</option></select>
-      <button id="pause">暂停滚动更新</button><button id="clear">清空</button><button id="export" class="primary">导出 JSON ↗</button>
+      <button id="pause">暂停滚动更新</button><button id="clear">清空</button><button id="export" class="primary">保存记录 ↗</button><button id="import">打开记录…</button>
     </section>
+    <section class="analysis-toolbar" aria-label="分析工具">
+      <select id="presets" aria-label="筛选预设"><option value="">筛选预设…</option></select>
+      <button id="save-preset">保存筛选…</button><button id="filters-button">隐藏事件 · <span id="hidden-count">0</span></button>
+      <label><input id="show-hidden" type="checkbox">显示已隐藏</label>
+      <label><input id="issues-only" type="checkbox">只看异常</label>
+      <button id="rules-button">校验规则 · <span id="rules-count">0</span></button>
+      <button id="export-filtered" class="text-button">导出筛选结果</button>
+    </section>
+    <div id="recording-banner" class="recording-banner" hidden><span id="recording-name"></span><button id="return-live">返回实时采集</button></div>
     <div id="notice" class="notice" role="status">在左侧勾选多台设备；无线设备分别填写配对码。</div>
     <section class="workspace">
       <div class="feed">
@@ -36,15 +46,42 @@
         <div id="detail-empty" class="detail-empty"><div class="orbit">◎</div><h3>选择一条事件</h3><p>选择左侧事件，查看页面来源、内容信息和完整参数。</p></div>
         <article id="detail" hidden>
           <div class="detail-title"><div><div id="event-meta" class="subtle mono"></div><h2 id="event-name"></h2></div><button id="copy">复制 JSON</button></div>
+          <div class="detail-actions"><button id="set-baseline">设为对比基准</button><button id="hide-event">隐藏此类事件</button><span id="baseline-label" class="subtle"></span><button id="clear-baseline" class="text-button" hidden>取消对比</button></div>
+          <div id="event-issues" class="event-issues" hidden></div>
           <div id="context" class="context"></div>
-          <div class="tabs" role="tablist"><button id="fields-tab" role="tab" aria-selected="true">参数视图</button><button id="json-tab" role="tab" aria-selected="false">原始 JSON</button><span>按原始字段名展示</span></div>
-          <div id="fields"></div><pre id="json" hidden></pre>
+          <div class="tabs" role="tablist"><button id="fields-tab" role="tab" aria-selected="true">参数视图</button><button id="json-tab" role="tab" aria-selected="false">原始 JSON</button><button id="diff-tab" role="tab" aria-selected="false">事件对比</button></div>
+          <div id="fields"></div><pre id="json" hidden></pre><div id="diff" hidden></div>
           <p class="detail-note">显示采集端提供的原始参数；未提供的默认值不会补齐。事件出现不代表服务端接收成功。</p>
         </article>
       </div>
     </section>
     <div class="bottom-note"><span>USB / 加密局域网 · 本机内存</span><span>断点暂停或 App 被挂起时，恢复运行后自动重连。</span></div>
   </main>
+  <dialog id="filters-dialog" aria-labelledby="filters-title">
+    <div class="dialog-heading"><h2 id="filters-title">筛选与隐藏事件</h2><button data-close>关闭</button></div>
+    <p class="subtle">隐藏只影响显示；保存记录仍包含这些事件。预设保存搜索、动作、页面、隐藏列表和异常筛选。</p>
+    <form id="preset-form" class="inline-form"><input id="preset-name" maxlength="100" placeholder="预设名称，例如播放器点击" aria-label="预设名称" required><button class="primary">保存当前筛选</button></form>
+    <h3>筛选预设</h3><div id="preset-list" class="managed-list"></div>
+    <h3>已隐藏的事件</h3><div id="hidden-list" class="managed-list"></div>
+  </dialog>
+  <dialog id="rules-dialog" aria-labelledby="rules-title">
+    <div class="dialog-heading"><h2 id="rules-title">校验规则</h2><button data-close>关闭</button></div>
+    <p class="subtle">规则只在本机检查当前保留的记录，不影响 App 上报。重复检查按同设备、同会话、同事件判断。</p>
+    <div id="rule-list" class="managed-list"></div>
+    <form id="rule-form" class="rule-form">
+      <h3 id="rule-form-title">新增规则</h3>
+      <label>规则名称<input id="rule-name" maxlength="100" required placeholder="例如：内容 ID 必填"></label>
+      <label>事件名<input id="rule-event" maxlength="128" value="*" placeholder="* 匹配全部，play_* 匹配前缀"></label>
+      <label>检查方式<select id="rule-kind"><option value="required">必填字段</option><option value="type">字段类型</option><option value="enum">允许值</option><option value="duplicate">重复触发</option></select></label>
+      <label id="rule-path-row">参数路径<input id="rule-path" maxlength="256" placeholder="content_info.id 或 /content_info/id"></label>
+      <label id="rule-type-row" hidden>字段类型<select id="rule-type"><option>string</option><option>number</option><option>integer</option><option>boolean</option><option>object</option><option>array</option><option>null</option></select></label>
+      <label id="rule-values-row" hidden>允许值（JSON 数组）<input id="rule-values" maxlength="12000" placeholder='["click", "view"]'></label>
+      <label id="rule-window-row" hidden>重复时间窗口（毫秒）<input id="rule-window" type="number" min="1" max="60000" value="500"></label>
+      <label id="rule-keys-row" hidden>用于判断重复的字段（逗号分隔）<input id="rule-keys" maxlength="2600" placeholder="留空表示全部参数一致"></label>
+      <p class="subtle wide">必填检查字段是否存在；类型和允许值检查已有字段。事件名支持 *；路径相对于 payload。</p>
+      <div class="wide"><button class="primary" id="rule-submit">保存规则</button><button type="button" id="rule-reset">清空表单</button><span id="rule-error" role="alert"></span></div>
+    </form>
+  </dialog>
   <div id="toast" role="status" hidden></div>
 </body>
 </html>

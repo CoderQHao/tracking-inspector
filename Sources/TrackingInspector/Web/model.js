@@ -81,6 +81,45 @@ class MultiDeviceStore {
   }
 
   updateSources(sources) {
+    // Transfer recordings before removing transport aliases. Old in-flight responses remain
+    // fenced by channel object identity; a handover keeps the canonical cursor and generation.
+    for (const source of sources) {
+      const aliases = (source.aliases || []).filter(id => id !== source.id && this.channels.has(id));
+      if (!aliases.length) continue;
+      const existing = this.channels.get(source.id);
+      const donors = aliases.map(id => this.channels.get(id));
+      const preferred = existing || donors[0];
+      const session = preferred.store.session;
+      const matching = [existing, ...donors].filter(c => c && c.store.session === session);
+      const target = existing || { ...preferred, source, inFlight: false, nextDue: 0,
+        store: new EventStore({ limit: this.limit, byteLimit: this.byteLimit, namespace: source.id }) };
+      const normalize = e => {
+        const row = { ...e, sourceID: source.id, deviceName: source.name,
+          key: JSON.stringify([source.id, e.session, e.id]) };
+        row.search = JSON.stringify(exportEvent(row)).toLowerCase();
+        row.bytes = row.search.length * 2;
+        return row;
+      };
+      const unique = events => {
+        const values = new Map();
+        for (const event of events) {
+          const row = normalize(event), previous = values.get(row.key);
+          if (!previous || row.arrival < previous.arrival) values.set(row.key, row);
+        }
+        return [...values.values()];
+      };
+      Object.assign(target.store, { session, namespace: source.id,
+        cursor: Math.max(...matching.map(c => c.store.cursor)),
+        latestID: Math.max(...matching.map(c => c.store.latestID)),
+        clearRequested: matching.some(c => c.store.clearRequested),
+        events: unique(matching.flatMap(c => c.store.events)).sort((a, b) => a.id - b.id) });
+      if (target.store.clearRequested) target.store.events = [];
+      target.store.bytes = target.store.events.reduce((n, e) => n + e.bytes, 0);
+      const related = new Set([source.id, ...aliases]);
+      this.frozen = this.frozen.filter(e => !related.has(e.sourceID)).concat(
+        target.store.clearRequested ? [] : unique(this.frozen.filter(e => related.has(e.sourceID) && e.session === session))).sort((a, b) => a.arrival - b.arrival);
+      this.channels.set(source.id, target);
+    }
     const allowed = new Set(sources.map(s => s.id));
     for (const id of this.channels.keys()) {
       if (!allowed.has(id)) this.remove(id);
@@ -108,7 +147,7 @@ class MultiDeviceStore {
     const channel = this.channels.get(source.id);
     if (channel?.source.generation !== source.generation) return false;
     const result = channel.store.ingest({ ...batch, events: batch.events.map(event => ({
-      ...event, sourceID: source.id, deviceName: source.name, mode: source.mode,
+      ...event, sourceID: source.id, deviceName: source.name, mode: batch.connection?.mode || source.mode,
       session: batch.session, app: batch.app || {},
     })) });
     if (result.changed) this.frozen = this.frozen.filter(e => e.sourceID !== source.id);
@@ -195,6 +234,7 @@ class DevicePoller {
       after: channel.store.cursor, session: channel.store.session })).then(batch => {
       if (this.store.channels.get(source.id) !== channel) return;
       if (batch.sourceID !== source.id || batch.generation !== source.generation) throw new Error("连接已更新，正在重试。");
+      if (batch.superseded) return;
       if (batch.error) throw new Error(batch.error);
       this.store.ingest(source, batch);
     }).catch(error => {

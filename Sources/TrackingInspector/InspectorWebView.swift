@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import InspectorCore
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
@@ -45,6 +46,7 @@ final class WebBridge: NSObject, WKScriptMessageHandlerWithReply, WKNavigationDe
     private let model: InspectorModel
     var root: URL?
     private var savePanel: NSSavePanel?
+    private var openPanel: NSOpenPanel?
 
     init(model: InspectorModel) {
         self.model = model
@@ -80,8 +82,44 @@ final class WebBridge: NSObject, WKScriptMessageHandlerWithReply, WKNavigationDe
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
             replyHandler(true, nil)
+        case "loadPreferences":
+            replyHandler(UserDefaults.standard.string(forKey: "analysisPreferences") ?? "{}", nil)
+        case "savePreferences":
+            guard let text = value["text"] as? String, text.utf8.count <= 256 * 1024,
+                  (try? JSONSerialization.jsonObject(with: Data(text.utf8))) is [String: Any]
+            else {
+                replyHandler(nil, "设置无效或超限。")
+                return
+            }
+            UserDefaults.standard.set(text, forKey: "analysisPreferences")
+            replyHandler(true, nil)
+        case "import":
+            guard openPanel == nil, savePanel == nil, let window = message.webView?.window else {
+                replyHandler(nil, "请先完成当前文件操作。")
+                return
+            }
+            let panel = NSOpenPanel()
+            openPanel = panel
+            panel.allowedContentTypes = [.json]
+            panel.allowsMultipleSelection = false
+            panel.canChooseDirectories = false
+            panel.beginSheetModal(for: window) { [weak self] result in
+                self?.openPanel = nil
+                guard result == .OK, let source = panel.url else { replyHandler(NSNull(), nil); return }
+                do {
+                    // Bounded read also handles a file that grows after the panel opens.
+                    let handle = try FileHandle(forReadingFrom: source)
+                    defer { try? handle.close() }
+                    let data = try handle.read(upToCount: 40 * 1024 * 1024 + 1) ?? Data()
+                    guard data.count <= 40 * 1024 * 1024, let text = String(data: data, encoding: .utf8) else {
+                        replyHandler(nil, "记录超过 40 MB 或不是 UTF-8 文件。")
+                        return
+                    }
+                    replyHandler(["name": source.lastPathComponent, "text": text], nil)
+                } catch { replyHandler(nil, error.localizedDescription) }
+            }
         case "export":
-            guard savePanel == nil, let text = value["text"] as? String, text.utf8.count <= 40 * 1024 * 1024 else {
+            guard savePanel == nil, openPanel == nil, let text = value["text"] as? String, text.utf8.count <= 40 * 1024 * 1024 else {
                 replyHandler(nil, "正在保存或导出内容超限。")
                 return
             }
