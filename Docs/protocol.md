@@ -8,6 +8,8 @@ The Mac app consumes read-only snapshots emitted by a cooperating Debug app. The
 
 **Wireless**: a separate opt-in TLS listener with Bonjour service type **`_trackinspect._tcp`**. Its advertised port may be dynamic. Use a stable, anonymous service name so the Mac can remember the selected device. Advertise neither pairing keys nor event data.
 
+For networks where Bonjour discovery is unavailable, the Mac also accepts an explicit IPv4 address and port. The phone should display/copy its current physical network address and the actual ready listener port, refresh these after network changes, and clear them when disabled. This path uses the exact same TLS authentication; it does not bypass network isolation or firewalls. Bonjour may also use a USB network interface, so discovery alone is not evidence of Wi-Fi connectivity.
+
 TLS parameters:
 
 - TLS 1.2 only.

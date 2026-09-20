@@ -82,13 +82,24 @@ private final class NetworkTransaction: @unchecked Sendable {
                             guard let self else { return }
                             if let error { finish(.failure(error)) } else { receive() }
                         })
-                    case .failed:
-                        finish(.failure(InspectorFailure("无线连接失败，请检查配对码、局域网权限和手机上的无线开关。")))
+                    case let .failed(error), let .waiting(error):
+                        let message: String
+                        switch error {
+                        case .tls:
+                            message = "加密握手失败，请核对手机当前的配对码，并检查 VPN 或代理是否影响局域网连接。"
+                        case .posix(.ECONNREFUSED):
+                            message = "设备拒绝连接，请刷新手机上的连接地址，并确认无线读取仍开启。"
+                        case .dns:
+                            message = "无法解析设备地址，请检查局域网权限，或使用手机显示的地址手动连接。"
+                        default:
+                            message = "局域网连接失败（\(error.localizedDescription)）。请检查连接地址、网络互通和局域网权限。"
+                        }
+                        finish(.failure(InspectorFailure(message)))
                     default: break
                     }
                 }
                 queue.asyncAfter(deadline: .now() + 6) { [weak self] in
-                    self?.finish(.failure(InspectorFailure("无线连接超时。请确认设备在同一局域网，App 未停在断点。")))
+                    self?.finish(.failure(InspectorFailure("局域网连接超时。请检查地址和网络互通，并保持 App 在前台且未停在断点。")))
                 }
                 connection.start(queue: queue)
             }

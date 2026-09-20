@@ -26,6 +26,12 @@ private final class FixtureServer: @unchecked Sendable {
         queue = DispatchQueue(label: name)
         listener = try NWListener(using: WirelessSecurity.parameters(code: code), on: .any)
         listener.service = .init(name: name, type: InspectorProtocol.serviceType)
+        listener.stateUpdateHandler = { [weak listener] state in
+            if case .ready = state, let port = listener?.port {
+                print("\(name) manual address: 127.0.0.1:\(port.rawValue)")
+                fflush(stdout)
+            }
+        }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         listener.start(queue: queue)
     }

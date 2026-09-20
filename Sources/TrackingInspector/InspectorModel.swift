@@ -20,8 +20,8 @@ struct InspectorDevice: Identifiable, Equatable {
     var mode: String {
         switch transport {
         case .usb: "usb"
-        case .wireless: "wifi"
-        case .unavailable: id.hasPrefix("wifi:") ? "wifi" : "usb"
+        case .wireless: "lan"
+        case .unavailable: id.hasPrefix("usb:") ? "usb" : "lan"
         }
     }
 }
@@ -34,6 +34,7 @@ final class InspectorModel: ObservableObject {
     @Published var discoveryStatus = "正在查找设备…"
     private var usb: [InspectorDevice] = []
     private var wireless: [InspectorDevice] = []
+    private var manualAddresses: [ManualDeviceAddress]
     private var keys: [String: String] = [:]
     private var names: [String: String]
     private var browser: NWBrowser?
@@ -44,6 +45,7 @@ final class InspectorModel: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
+        manualAddresses = Array((defaults.stringArray(forKey: "manualAddresses") ?? []).compactMap { try? ManualDeviceAddress($0) }.prefix(CaptureChannels.limit))
         names = defaults.dictionary(forKey: "deviceNames") as? [String: String] ?? [:]
         let saved = defaults.stringArray(forKey: "enabledDevices")?.filter { !["demo", "demo-a", "demo-b"].contains($0) }
         let legacy = defaults.string(forKey: "selectedDevice").flatMap { $0.isEmpty || $0 == "demo" ? nil : $0 }
@@ -51,6 +53,7 @@ final class InspectorModel: ObservableObject {
         for id in (saved ?? legacy.map { [$0] } ?? []).prefix(CaptureChannels.limit) {
             try? channels.enable(id)
         }
+        mergeDevices()
     }
 
     var displayDevices: [InspectorDevice] {
@@ -93,6 +96,33 @@ final class InspectorModel: ObservableObject {
         } catch { setStatus(error.localizedDescription, for: id) }
     }
 
+    func addManualDevice(address: String, code: String) throws {
+        let address = try ManualDeviceAddress(address)
+        _ = try WirelessSecurity.key(code)
+        guard manualAddresses.contains(address) || manualAddresses.count < CaptureChannels.limit else {
+            throw InspectorFailure("最多保存 8 个手动地址，请先移除不再使用的地址。")
+        }
+        try channels.enable(address.id)
+        autoSelect = false
+        if !manualAddresses.contains(address) { manualAddresses.append(address) }
+        names[address.id] = "地址 · \(address.address)"
+        mergeDevices()
+        pair(address.id, code: code)
+        saveSelection()
+    }
+
+    func removeManualDevice(_ id: String) {
+        guard manualAddresses.contains(where: { $0.id == id }) else { return }
+        channels.disable(id)
+        cancelRequest(id)
+        manualAddresses.removeAll { $0.id == id }
+        keys.removeValue(forKey: id)
+        names.removeValue(forKey: id)
+        statuses.removeValue(forKey: id)
+        mergeDevices()
+        saveSelection()
+    }
+
     func channelSnapshot() -> [[String: Any]] {
         displayDevices.compactMap { device in
             guard let generation = channels.generations[device.id] else { return nil }
@@ -109,7 +139,7 @@ final class InspectorModel: ObservableObject {
                 self?.wireless = results.compactMap { result in
                     guard case let .service(name, type, domain, _) = result.endpoint,
                           type.trimmingCharacters(in: CharacterSet(charactersIn: ".")) == InspectorProtocol.serviceType else { return nil }
-                    return InspectorDevice(id: "wifi:\(name)@\(domain)", name: "Wi-Fi · \(name)", transport: .wireless(result.endpoint))
+                    return InspectorDevice(id: "wifi:\(name)@\(domain)", name: "局域网 · \(name)", transport: .wireless(result.endpoint))
                 }.sorted { $0.name < $1.name }
                 self?.mergeDevices()
             }
@@ -147,7 +177,8 @@ final class InspectorModel: ObservableObject {
 
     private func mergeDevices() {
         var seen: Set<String> = []
-        let updated = (usb + wireless).filter { seen.insert($0.id).inserted }
+        let manual = manualAddresses.map { InspectorDevice(id: $0.id, name: "地址 · \($0.address)", transport: .wireless($0.endpoint)) }
+        let updated = (usb + wireless + manual).filter { seen.insert($0.id).inserted }
         if devices != updated { devices = updated }
         if autoSelect, usb.count == 1 { setEnabled(true, device: usb[0]) }
     }
@@ -200,5 +231,6 @@ final class InspectorModel: ObservableObject {
         let ids = channels.generations.keys.sorted()
         UserDefaults.standard.set(ids, forKey: "enabledDevices")
         UserDefaults.standard.set(names.filter { ids.contains($0.key) }, forKey: "deviceNames")
+        UserDefaults.standard.set(manualAddresses.map(\.address), forKey: "manualAddresses")
     }
 }
