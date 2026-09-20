@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tracking Inspector</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="model.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="logo">◎</span><div><h1>埋点观察台</h1><span class="subtle">TRACKING INSPECTOR / LOCAL DEBUG</span></div></div>
+    <div class="header-right"><span id="mode" class="pill">DEBUG</span><span id="status" class="status" role="status">正在连接…</span></div>
+  </header>
+  <main>
+    <section class="intro"><div><h2>实时事件</h2><p>查看客户端交给埋点 SDK 的事件与参数。</p></div><div class="session-info"><span class="subtle">当前会话</span><strong id="app-info">等待 Debug App</strong><span id="device-info">在顶部选择 USB 或无线设备</span></div></section>
+    <section class="toolbar" aria-label="筛选和操作">
+      <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索事件名、页面、ID 或任意参数…" aria-label="搜索事件和参数"><kbd>⌘ K</kbd></label>
+      <select id="action" aria-label="筛选动作"><option value="">全部动作</option></select>
+      <select id="page" aria-label="筛选页面"><option value="">全部页面</option></select>
+      <button id="pause">暂停滚动更新</button><button id="clear">清空</button><button id="export" class="primary">导出 JSON ↗</button>
+    </section>
+    <div id="notice" class="notice" role="status">在窗口顶部选择设备；无线连接需要手机上的配对码。</div>
+    <section class="workspace">
+      <div class="feed">
+        <div class="panel-heading"><h3>事件流 <span id="count" class="counter">0</span></h3><span id="live-label" class="live">● LIVE</span></div>
+        <div class="feed-summary"><span id="summary">等待第一个事件</span><button id="latest" class="text-button">查看最新 ↓</button></div>
+        <div id="events" class="events" aria-label="事件列表"></div>
+        <div id="empty" class="empty"><span class="empty-icon">⌁</span><strong>你的操作，会在这里出现</strong><p>在手机上打开页面、点击按钮等操作。<br>无需再从控制台中翻找日志。</p></div>
+        <footer id="retention">最多保留 2,000 条 / 16 MB</footer>
+      </div>
+      <div class="detail-panel">
+        <div class="panel-heading"><h3>事件详情</h3><span class="subtle">选中后保持，不随新事件切换</span></div>
+        <div id="detail-empty" class="detail-empty"><div class="orbit">◎</div><h3>选择一条事件</h3><p>选择左侧事件，查看页面来源、内容信息和完整参数。</p></div>
+        <article id="detail" hidden>
+          <div class="detail-title"><div><div id="event-meta" class="subtle mono"></div><h2 id="event-name"></h2></div><button id="copy">复制 JSON</button></div>
+          <div id="context" class="context"></div>
+          <div class="tabs" role="tablist"><button id="fields-tab" role="tab" aria-selected="true">参数视图</button><button id="json-tab" role="tab" aria-selected="false">原始 JSON</button><span>按原始字段名展示</span></div>
+          <div id="fields"></div><pre id="json" hidden></pre>
+          <p class="detail-note">显示采集端提供的原始参数；未提供的默认值不会补齐。事件出现不代表服务端接收成功。</p>
+        </article>
+      </div>
+    </section>
+    <div class="bottom-note"><span>USB / 加密局域网 · 本机内存</span><span>断点暂停或 App 被挂起时，恢复运行后自动重连。</span></div>
+  </main>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>

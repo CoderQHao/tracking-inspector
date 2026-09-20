@@ -1,0 +1,16 @@
+name: Build and test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --build-system native --enable-swift-testing --disable-xctest
+      - run: node --test Tests/web-model.test.mjs
+      - run: bash Scripts/build-app.sh --universal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tracking-Inspector-macOS
+          path: dist/Tracking-Inspector.zip

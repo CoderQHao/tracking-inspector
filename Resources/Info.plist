@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>io.github.coderqhao.tracking-inspector</string>
+    <key>CFBundleName</key><string>Tracking Inspector</string>
+    <key>CFBundleDisplayName</key><string>Tracking Inspector</string>
+    <key>CFBundleExecutable</key><string>TrackingInspector</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>发现并连接同一局域网内开启了埋点调试的 App。</string>
+    <key>NSBonjourServices</key><array><string>_trackinspect._tcp</string></array>
+</dict></plist>
