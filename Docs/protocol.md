@@ -14,6 +14,7 @@ TLS parameters:
 - Cipher suite `TLS_PSK_WITH_AES_128_GCM_SHA256` (`0x00A8`).
 - A cryptographically random 16-byte pre-shared key, shown as 32 hexadecimal characters on the phone.
 - PSK identity bytes: UTF-8 `tracking-inspector-v1`.
+- Disable TLS session resumption and tickets on both peers; each request must authenticate the current key, even after an earlier successful pairing.
 - Apple APIs: `NWProtocolTLS.Options`, `sec_protocol_options_add_pre_shared_key`, `sec_protocol_options_append_tls_ciphersuite`.
 
 The phone generates a new key whenever wireless capture is enabled. Disabling must cancel the listener and all wireless connections, and prevent callbacks from previous listener instances from accepting requests. Leave USB operational. Never fall back to plaintext if TLS fails.

@@ -33,6 +33,9 @@ public enum WirelessSecurity {
         let options = tls.securityProtocolOptions
         sec_protocol_options_set_min_tls_protocol_version(options, .TLSv12)
         sec_protocol_options_set_max_tls_protocol_version(options, .TLSv12)
+        // Always authenticate the current pairing key, including after a key change.
+        sec_protocol_options_set_tls_resumption_enabled(options, false)
+        sec_protocol_options_set_tls_tickets_enabled(options, false)
         sec_protocol_options_append_tls_ciphersuite(options, tls_ciphersuite_t(rawValue: 0x00A8)!)
         let secret = key.withUnsafeBytes { DispatchData(bytes: $0) }
         let identity = Data("tracking-inspector-v1".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
