@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Resources/AppIcon.png" width="128" alt="Tracking Inspector 应用图标">
+</p>
+
 # Tracking Inspector
 
 一个用于查看 iOS Debug 埋点的 macOS 桌面应用。同时连接多台设备查看事件、搜索任意参数、按设备、页面和动作筛选，检查字段或原始 JSON，并通过系统保存面板导出。
@@ -9,12 +13,23 @@
 
 > 这是观察客户端事件的工具。iOS App 需要接入 [采集协议](Docs/protocol.md)，它不能直接读取任意 App 的埋点；事件出现也不代表服务端接收成功。
 
-
 ## 下载
 
-从 [GitHub Releases](https://github.com/CoderQHao/tracking-inspector/releases/latest) 下载 `Tracking-Inspector-0.2.0-universal.dmg`，打开后将应用拖到 `Applications`。DMG 同时支持 Apple Silicon 和 Intel；运行不需要开发环境。
+从 [GitHub Releases](https://github.com/CoderQHao/tracking-inspector/releases/latest) 下载 `Tracking-Inspector-0.2.1-universal.dmg`，打开后将应用拖到 `Applications`。DMG 同时支持 Apple Silicon 和 Intel；运行不需要开发环境。
 
 当前是 ad-hoc 签名的开发版本，尚未经过 Developer ID 签名与 Apple 公证；其他 Mac 下载后可能被 Gatekeeper 拦截。Release 提供 `SHA256SUMS` 校验文件，签名与公证仍是后续正式分发需要补齐的部分。
+
+## 界面预览
+
+多设备事件流：同时查看各设备的连接状态、事件来源和参数详情。
+
+![多设备事件流和参数详情](Docs/images/multi-device.png)
+
+按设备和事件名筛选，直接查看选中事件的原始 JSON，也可以复制或导出当前筛选结果。
+
+![按设备筛选并查看原始 JSON](Docs/images/filter-json.png)
+
+> 截图来自实际运行的 Mac 应用，事件由独立开发测试端生成，不包含真实埋点。正式应用没有内置模拟设备或演示数据。
 
 ## 使用
 
@@ -46,7 +61,7 @@ bash Scripts/build-dmg.sh
 
 - `dist/Tracking Inspector.app`
 - `dist/Tracking-Inspector.zip`
-- `dist/Tracking-Inspector-0.2.0-universal.dmg`（运行 DMG 脚本后）
+- `dist/Tracking-Inspector-0.2.1-universal.dmg`（运行 DMG 脚本后）
 - `dist/SHA256SUMS`
 
 默认使用 ad-hoc 签名，适合本地开发。仓库产物尚未做 Developer ID 签名与 Apple 公证；下载到其他 Mac 时，Gatekeeper 可能拦截。正式分发需使用自己的 Developer ID 并完成公证，脚本支持 `SIGNING_IDENTITY`，不会自动选择证书或执行公证。

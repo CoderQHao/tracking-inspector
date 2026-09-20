@@ -68,9 +68,14 @@ private final class FixtureServer: @unchecked Sendable {
             let first = max(cursor + 1, latest - 499, 1)
             let last = min(latest, first + 99)
             let events: [[String: Any]] = first <= last ? (first ... last).map { id in
-                ["id": id, "timestamp": self.started.timeIntervalSince1970 + Double(id), "name": "fixture_event",
-                 "payload": ["event_info": ["event": "fixture_event", "action": "VIEW", "current_page_name": self.name],
-                             "test_only": true]]
+                let names = ["page_view", "episode_click", "play_start", "play_pause"]
+                let event = names[(id - 1) % names.count]
+                return ["id": id, "timestamp": self.started.timeIntervalSince1970 + Double(id), "name": event,
+                        "payload": ["event_info": ["event": event, "action": event == "page_view" ? "VIEW" : "CLICK",
+                                                   "current_page_name": event == "page_view" ? "Feed" : "Player",
+                                                   "source_page_name": "Feed", "trace_page_name": "Explore"],
+                                    "content_info": ["id": "sample-episode-042", "title": "A Walk Through the City", "source": "recommendation"],
+                                    "extra": ["quality": "high", "playback_speed": 1.25], "test_only": true]]
             } : []
             let value: [String: Any] = ["protocolVersion": 1, "session": session, "oldestID": max(1, latest - 499),
                                         "latestID": latest, "nextCursor": events.last?["id"] ?? latest, "events": events,

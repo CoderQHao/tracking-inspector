@@ -14,8 +14,11 @@ else
   cp "$binary_dir/TrackingInspector" "$app_dir/Contents/MacOS/TrackingInspector"
 fi
 cp Resources/Info.plist "$app_dir/Contents/Info.plist"
+bash Scripts/build-icon.sh "$app_dir/Contents/Resources/AppIcon.icns"
 ditto Sources/TrackingInspector/Web "$app_dir/Contents/Resources/Web"
 codesign --force --sign "${SIGNING_IDENTITY:--}" "$app_dir"
 codesign --verify --strict "$app_dir"
+# Let macOS notice changed bundle resources when rebuilding at the same path.
+touch "$app_dir"
 ditto -c -k --keepParent "$app_dir" "$repo_dir/dist/Tracking-Inspector.zip"
 echo "Built: $app_dir"
