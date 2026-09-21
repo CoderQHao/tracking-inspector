@@ -4,7 +4,7 @@
 
 # Tracking Inspector
 
-在 Mac 上直观查看 iOS Debug 埋点。支持 USB / 局域网连接，运行无需 Python 或其他开发环境。
+在 Mac 上直观查看 iOS Debug 埋点。支持 USB / 局域网连接。
 
 iOS App 需接入 [采集协议](Docs/protocol.md)。
 
@@ -33,17 +33,3 @@ iOS App 需接入 [采集协议](Docs/protocol.md)。
 4. 操作手机，查看事件；选中一条事件「设为对比基准」，再选另一条即可比较。
 
 无线连接失败时检查局域网权限、地址和配对码，以及 VPN 是否允许局域网流量。iOS 挂起 App 时读取会暂停，恢复运行后自动重连。
-
-事件保留在本机，实时缓存最多 2,000 条 / 16 MiB；仅在主动保存时写入文件。截图使用开发测试数据，应用内没有模拟设备或演示数据。
-
-## 开发
-
-需要 Xcode 16+；Node.js 仅用于运行 JavaScript 测试。
-
-```sh
-swift test --build-system native --enable-swift-testing --disable-xctest
-node --test Tests/*.test.mjs
-bash Scripts/build-dmg.sh
-```
-
-产物位于 `dist/`。发布时更新 `Resources/Info.plist` 版本号、添加 `Docs/releases/vX.Y.Z.md`，主分支 CI 通过后推送对应标签，GitHub Actions 会自动测试、构建和发布。
