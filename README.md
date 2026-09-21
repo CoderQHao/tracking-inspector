@@ -12,7 +12,7 @@ iOS App 需接入 [采集协议](Docs/protocol.md)。
 
 [下载最新 DMG](https://github.com/CoderQHao/tracking-inspector/releases/latest)，打开后将应用拖入 `Applications`。
 
-支持 **macOS 13+、Apple Silicon 和 Intel**。目前使用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可能被系统拦截；Release 附带 `SHA256SUMS` 校验文件。
+支持 **macOS 13+，仅限 Apple Silicon（M 系列芯片）**。目前使用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可能被系统拦截；Release 附带 `SHA256SUMS` 校验文件。
 
 ## 功能
 

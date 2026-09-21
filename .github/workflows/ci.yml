@@ -12,8 +12,8 @@ jobs:
       - run: bash Scripts/build-dmg.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: Tracking-Inspector-macOS
+          name: Tracking-Inspector-Apple-Silicon
           path: |
             dist/*.zip
-            dist/*.dmg
+            dist/*-arm64.dmg
             dist/SHA256SUMS
