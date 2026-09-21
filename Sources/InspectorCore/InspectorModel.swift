@@ -30,6 +30,7 @@ public final class InspectorModel: ObservableObject {
     @Published public private(set) var devices: [InspectorDevice] = []
     @Published public private(set) var channels = CaptureChannels()
     @Published public private(set) var statuses: [String: String] = [:]
+    @Published public private(set) var connectedDeviceCount = 0
     @Published public var discoveryStatus = "正在查找设备…"
     private var identities = DeviceIdentity()
     private var activeEndpoints: [String: String] = [:]
@@ -43,6 +44,12 @@ public final class InspectorModel: ObservableObject {
     private var browser: NWBrowser?
     private var timer: Timer?
     private var refreshing = false
+    private let recording = CaptureRecording()
+    private var captureLoop: Task<Void, Never>?
+    private var captureRun = UUID()
+    private var captureTasks: [String: (channel: CaptureRecording.Channel, token: UUID, task: Task<Void, Never>)] = [:]
+    private var nextReads: [String: Date] = [:]
+    private var activity: NSObjectProtocol?
     private var autoSelect: Bool
     private var requests: [String: (token: UUID, task: Task<[String: Any], Error>)] = [:]
 
@@ -151,39 +158,156 @@ public final class InspectorModel: ObservableObject {
 
     public func start() {
         guard browser == nil else { return }
+        startCapture()
+        let run = captureRun
         let browser = NWBrowser(for: .bonjour(type: InspectorProtocol.serviceType, domain: nil), using: .tcp)
         self.browser = browser
         browser.browseResultsChangedHandler = { [weak self] results, _ in
-            Task { @MainActor in
-                self?.wireless = results.compactMap { result in
+            Task { @MainActor [weak self] in
+                guard let self, captureRun == run else { return }
+                wireless = results.compactMap { result in
                     guard case let .service(name, type, domain, _) = result.endpoint,
                           type.trimmingCharacters(in: CharacterSet(charactersIn: ".")) == InspectorProtocol.serviceType else { return nil }
                     return InspectorDevice(id: "wifi:\(name)@\(domain)", name: "局域网 · \(name)", transport: .wireless(result.endpoint))
                 }.sorted { $0.name < $1.name }
-                self?.mergeDevices()
+                mergeDevices()
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
+                guard let self, captureRun == run else { return }
                 switch state {
-                case .ready: self?.discoveryStatus = "USB / 局域网自动发现"
-                case .waiting, .failed: self?.discoveryStatus = "无线发现暂不可用，请检查局域网权限；USB 仍可使用"
+                case .ready: discoveryStatus = "USB / 局域网自动发现"
+                case .waiting, .failed: discoveryStatus = "无线发现暂不可用，请检查局域网权限；USB 仍可使用"
                 default: break
                 }
             }
         }
         browser.start(queue: DispatchQueue(label: "tracking-inspector.discovery"))
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshUSB() }
+            Task { @MainActor [weak self] in
+                guard let self, captureRun == run else { return }
+                refreshUSB()
+            }
         }
         refreshUSB()
+    }
+
+    /// Capture is owned by the application, independently of windows and WebKit.
+    func startCapture() {
+        guard captureLoop == nil else { return }
+        captureLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.pollRecording()
+                do { try await Task.sleep(nanoseconds: 250_000_000) }
+                catch { break }
+            }
+        }
+        updateActivity()
+    }
+
+    public func stop() {
+        captureRun = UUID()
+        captureLoop?.cancel()
+        captureLoop = nil
+        timer?.invalidate()
+        timer = nil
+        browser?.cancel()
+        browser = nil
+        for operation in captureTasks.values {
+            operation.task.cancel()
+        }
+        captureTasks.removeAll()
+        for id in Array(requests.keys) {
+            cancelRequest(id)
+        }
+        nextReads.removeAll()
+        refreshing = false
+        for channel in recording.channels.values {
+            channel.connected = false
+            channel.error = "已停止采集"
+        }
+        connectedDeviceCount = 0
+        updateActivity()
+    }
+
+    public func recordingSnapshot(version: Int, after: Int) -> [String: Any] {
+        synchronizeRecording()
+        return recording.snapshot(version: version, after: after)
+    }
+
+    public func clearRecording(sourceID: String) {
+        synchronizeRecording()
+        recording.clear(sourceID)
+    }
+
+    func pollRecording(now: Date = Date()) {
+        synchronizeRecording()
+        let run = captureRun
+        for (id, channel) in recording.channels {
+            guard captureTasks[id] == nil, nextReads[id, default: .distantPast] <= now else { continue }
+            let token = UUID()
+            let source = channel.source
+            let task = Task { [weak self] in
+                guard let self, captureRun == run, !Task.isCancelled, captureTasks[id]?.token == token else { return }
+                let batch = await fetch(deviceID: id, generation: source.generation, after: channel.cursor, session: channel.session)
+                guard captureRun == run, !Task.isCancelled, captureTasks[id]?.token == token else { return }
+                captureTasks.removeValue(forKey: id)
+                synchronizeRecording()
+                guard recording.channels[id] === channel else { return }
+                if batch["superseded"] as? Bool != true {
+                    do {
+                        if let error = batch["error"] as? String { throw InspectorFailure(error) }
+                        try recording.ingest(batch, into: channel)
+                    } catch {
+                        channel.connected = false
+                        channel.error = error.localizedDescription
+                        setStatus(error.localizedDescription, for: id)
+                    }
+                }
+                nextReads[id] = Date().addingTimeInterval(channel.connected && channel.cursor < channel.latestID ? 0.05 : 0.6)
+                updateConnectedCount()
+            }
+            captureTasks[id] = (channel, token, task)
+        }
+    }
+
+    private func synchronizeRecording() {
+        recording.updateSources(channelSnapshot())
+        for (id, operation) in captureTasks where recording.channels[id] !== operation.channel {
+            operation.task.cancel()
+            captureTasks.removeValue(forKey: id)
+            cancelRequest(id)
+            nextReads.removeValue(forKey: id)
+        }
+        nextReads = nextReads.filter { recording.channels[$0.key] != nil }
+        updateConnectedCount()
+        updateActivity()
+    }
+
+    private func updateConnectedCount() {
+        let count = recording.channels.values.filter(\.connected).count
+        if connectedDeviceCount != count { connectedDeviceCount = count }
+    }
+
+    private func updateActivity() {
+        let needed = captureLoop != nil && !channels.generations.isEmpty
+        if needed, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
+                                                             reason: "接收用户选择设备的实时埋点")
+        } else if !needed, let activity {
+            ProcessInfo.processInfo.endActivity(activity)
+            self.activity = nil
+        }
     }
 
     public func refreshUSB() {
         guard !refreshing else { return }
         refreshing = true
+        let run = captureRun
         Task {
             let result = await Task.detached(priority: .utility) { Result { try USBMuxClient.devices() } }.value
+            guard captureRun == run else { return }
             refreshing = false
             switch result {
             case let .success(found): updateUSB(found)

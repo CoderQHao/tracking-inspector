@@ -106,8 +106,7 @@ h1 {
   box-shadow:0 0 0 4px #eaf7f3;
 }
 main {
-  max-width:1700px;
-  margin:auto;
+  width:100%;
   padding:18px 38px 0;
   height:calc(100vh - 68px);
   display:flex;

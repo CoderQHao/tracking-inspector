@@ -13,25 +13,75 @@ import SwiftUI
 @main
 struct TrackingInspectorApp: App {
     @NSApplicationDelegateAdaptor(InspectorAppDelegate.self) private var delegate
-    @StateObject private var model = InspectorModel()
 
     var body: some Scene {
-        WindowGroup("Tracking Inspector") {
-            HSplitView {
-                DeviceSidebar(model: model).frame(minWidth: 230, idealWidth: 250, maxWidth: 320)
-                InspectorWebView(model: model).frame(minWidth: 880)
-            }
-            .frame(minWidth: 1120, minHeight: 720)
-            .task { model.start() }
+        Window("Tracking Inspector", id: "inspector") {
+            InspectorWindow(appDelegate: delegate)
         }
         .defaultSize(width: 1440, height: 900)
         .commands { CommandGroup(replacing: .newItem) {} }
+
+        MenuBarExtra("Tracking Inspector", systemImage: "waveform.path") {
+            InspectorMenu(appDelegate: delegate)
+        }
+    }
+}
+
+private struct InspectorWindow: View {
+    @ObservedObject var appDelegate: InspectorAppDelegate
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        HSplitView {
+            DeviceSidebar(model: appDelegate.model, showingManualConnection: $appDelegate.showingManualConnection)
+                .frame(minWidth: 230, idealWidth: 250, maxWidth: 320)
+            InspectorWebView(model: appDelegate.model).frame(minWidth: 880)
+        }
+        .frame(minWidth: 1120, minHeight: 720)
+        .sheet(isPresented: $appDelegate.showingManualConnection) { ManualConnectionSheet(model: appDelegate.model) }
+        .onAppear { appDelegate.reopenWindow = { openWindow(id: "inspector") } }
+    }
+}
+
+private struct InspectorMenu: View {
+    @ObservedObject var appDelegate: InspectorAppDelegate
+    @ObservedObject private var model: InspectorModel
+    @Environment(\.openWindow) private var openWindow
+
+    init(appDelegate: InspectorAppDelegate) {
+        self.appDelegate = appDelegate
+        model = appDelegate.model
+    }
+
+    var body: some View {
+        Button("打开埋点观察台") { showWindow() }
+            .keyboardShortcut("1", modifiers: .command)
+        Divider()
+        Text("\(model.connectedDeviceCount) / \(model.channels.generations.count) 台已连接")
+        ForEach(model.displayDevices.filter { model.isEnabled($0.id) }) { device in
+            Text("\(device.name) · \(model.status(device.id))")
+        }
+        Divider()
+        Button("连接设备…") {
+            showWindow()
+            appDelegate.showingManualConnection = true
+        }
+        Button("刷新 USB 设备") { model.refreshUSB() }
+        Divider()
+        Text("关闭窗口后继续采集")
+        Button("退出 Tracking Inspector") { NSApp.terminate(nil) }
+            .keyboardShortcut("q", modifiers: .command)
+    }
+
+    private func showWindow() {
+        openWindow(id: "inspector")
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
 private struct DeviceSidebar: View {
     @ObservedObject var model: InspectorModel
-    @State private var showingManualConnection = false
+    @Binding var showingManualConnection: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -63,7 +113,6 @@ private struct DeviceSidebar: View {
         }
         .padding(16)
         .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(isPresented: $showingManualConnection) { ManualConnectionSheet(model: model) }
     }
 }
 
@@ -157,13 +206,29 @@ private struct ManualConnectionSheet: View {
     }
 }
 
-final class InspectorAppDelegate: NSObject, NSApplicationDelegate {
+@MainActor
+final class InspectorAppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+    let model = InspectorModel()
+    @Published var showingManualConnection = false
+    var reopenWindow: (() -> Void)?
+
     func applicationDidFinishLaunching(_: Notification) {
+        model.start()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
+        reopenWindow?()
+        NSApp.activate(ignoringOtherApps: true)
+        return false
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        model.stop()
     }
 }

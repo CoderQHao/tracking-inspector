@@ -1,6 +1,6 @@
 
 const $ = id => document.getElementById(id);
-const liveStore = new MultiDeviceStore();
+const liveStore = new NativeRecordingStore();
 let store = liveStore;
 let recordingName = "";
 let preferences = normalizePreferences();
@@ -72,7 +72,7 @@ function render() {
   $("mode").textContent = offline ? "RECORDING" : channels.length > 1 ? "MULTI DEVICE" : (channels[0]?.mode.toUpperCase() || "DEBUG");
   const scoped = store.metadata(deviceSelect.value);
   $("app-info").textContent = scoped.length === 1 ? (scoped[0].app.bundleID || scoped[0].name) : `同时查看 ${channels.length} 台设备`;
-  $("device-info").textContent = "每条事件标记来源设备 · 按接收顺序排列";
+  $("device-info").textContent = "每条事件标记来源设备 · 最新接收的在顶部";
   const warnings = channels.filter(c => c.error).map(c => `${c.name}：${c.error}`);
   for (const c of channels) if (c.dropped) warnings.push(`${c.name}：累计丢弃 ${c.dropped} 条调试副本。`);
   notice = offline ? "" : bridgeError || (channels.length ? warnings.join("  ") : "在左侧勾选 USB 或无线设备，可同时选择多台。");
@@ -85,14 +85,18 @@ function render() {
   $("summary").textContent = `${rows.length} 条匹配 / ${store.visible.length} 条 · ${[...issues.values()].filter(v => v.length).length} 条异常`;
   $("live-label").textContent = offline ? "◇ RECORDING" : store.paused ? "Ⅱ 已暂停" : "● LIVE";
   $("live-label").classList.toggle("paused", store.paused);
-  $("pause").textContent = store.paused ? "继续实时更新" : "暂停滚动更新";
+  // Keep button text nodes stable during polling: WebKit can drop a click if its
+  // text target is replaced between mouse down and mouse up.
+  const pauseLabel = store.paused ? "继续实时更新" : "暂停滚动更新";
+  if ($("pause").textContent !== pauseLabel) $("pause").textContent = pauseLabel;
   $("pause").disabled = offline;
   $("clear").disabled = offline;
   $("workspace-title").textContent = offline ? "记录回看" : "实时事件";
   $("recording-banner").hidden = !offline;
   $("recording-name").textContent = `${recordingName} · 实时采集仍在后台继续`;
   renderAnalysisControls();
-  $("clear").textContent = $("device").value ? "清空此设备" : "清空全部";
+  const clearLabel = deviceSelect.value ? "清空此设备" : "清空全部";
+  if ($("clear").textContent !== clearLabel) $("clear").textContent = clearLabel;
   $("notice").textContent = notice;
   $("notice").hidden = !notice;
   $("retention").textContent = `最多保留 2,000 条 / 16 MB${store.trimmed ? ` · 已淘汰 ${store.trimmed} 条` : ""}${store.missed ? ` · App 缓存已错过 ${store.missed} 条` : ""}`;
@@ -102,10 +106,15 @@ function render() {
   if (signature === lastListSignature) return;
   lastListSignature = signature;
   const list = $("events");
-  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
-  const oldScroll = list.scrollTop;
+  const followLatest = list.scrollTop < 1 && !store.paused;
+  // Anchor the first visible event so prepended rows do not move the history
+  // being read. Row heights can vary, and retention can remove older rows.
+  const listTop = list.getBoundingClientRect().top;
+  const anchor = followLatest ? null : [...list.children].find(entry => entry.getBoundingClientRect().bottom > listTop);
+  const anchorOffset = anchor ? anchor.getBoundingClientRect().top - listTop : 0;
+  let nextAnchor = null;
   const fragment = document.createDocumentFragment();
-  for (const event of rows) {
+  for (const event of rows.slice().reverse()) {
     const info = event.payload.event_info || {};
     const button = node("button", undefined, `event-row${selected?.key === event.key ? " selected" : ""}`);
     button.setAttribute("aria-pressed", String(selected?.key === event.key));
@@ -117,6 +126,8 @@ function render() {
     button.append(node("div", event.deviceName, `device-label ${event.mode}`), top, middle, node("div", info.current_page_name || "未设置当前页", "event-page mono"));
     button.addEventListener("click", () => select(event));
     const entry = node("div", undefined, "event-entry");
+    entry.dataset.key = event.key;
+    if (anchor?.dataset.key === event.key) nextAnchor = entry;
     const quick = node("div", undefined, "event-quick");
     const focus = actionButton("只看", () => focusEvent(event.name)); focus.setAttribute("aria-label", `只看 ${event.name}`);
     const excluded = preferences.filter.hiddenNames.includes(event.name);
@@ -124,7 +135,8 @@ function render() {
     quick.append(focus, exclude); entry.append(button, quick); fragment.append(entry);
   }
   list.replaceChildren(fragment);
-  list.scrollTop = atBottom && !store.paused ? list.scrollHeight : oldScroll;
+  if (nextAnchor) list.scrollTop += nextAnchor.getBoundingClientRect().top - listTop - anchorOffset;
+  else list.scrollTop = 0;
 }
 
 function select(event) {
@@ -205,12 +217,12 @@ function refresh() {
   render();
   if (!selected && filtered().length) select(filtered().at(-1));
 }
-const poller = new DevicePoller(liveStore, native, refresh, message => { bridgeError = message; });
+const poller = new RecordingPoller(liveStore, native, refresh, message => { bridgeError = message; });
 
 for (const id of ["search", "action", "page", "device"]) $(id).addEventListener(id === "search" ? "input" : "change", filterDidChange);
 $("pause").onclick = () => { store.togglePause(); render(); };
-$("clear").onclick = () => { store.clear($("device").value); refresh(); };
-$("latest").onclick = () => { const latest = filtered().at(-1); if (latest) select(latest); $("events").scrollTop = $("events").scrollHeight; };
+$("clear").onclick = () => { if (store === liveStore) poller.clear($("device").value); };
+$("latest").onclick = () => { const latest = filtered().at(-1); if (latest) select(latest); $("events").scrollTop = 0; };
 for (const tab of ["fields", "json", "diff"]) $(`${tab}-tab`).onclick = () => { detailMode = tab; renderDetail(); };
 $("copy").onclick = async () => {
   try { await native({ command: "copy", text: JSON.stringify(selected.payload, null, 2) }); toast("已复制事件参数"); }
@@ -268,6 +280,7 @@ async function start() {
   catch { toast("已保存的设置无法读取，当前使用默认设置。"); }
   preferencesReady = true;
   initAnalysisWorkspace(); render(); poller.tick();
-  setInterval(() => poller.tick(), 250);
+  setInterval(() => { if (!document.hidden) poller.tick(); }, 250);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poller.tick(); });
 }
 start();
