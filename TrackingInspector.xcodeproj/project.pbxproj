@@ -238,8 +238,8 @@
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
-				"CURRENT_PROJECT_VERSION" = "9";
-				"MARKETING_VERSION" = "1.0.0";
+				"CURRENT_PROJECT_VERSION" = "10";
+				"MARKETING_VERSION" = "1.1.0";
 				"ENABLE_APP_SANDBOX" = "NO";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"EXECUTABLE_NAME" = "TrackingInspector";
@@ -259,8 +259,8 @@
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
-				"CURRENT_PROJECT_VERSION" = "9";
-				"MARKETING_VERSION" = "1.0.0";
+				"CURRENT_PROJECT_VERSION" = "10";
+				"MARKETING_VERSION" = "1.1.0";
 				"ENABLE_APP_SANDBOX" = "NO";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"EXECUTABLE_NAME" = "TrackingInspector";
