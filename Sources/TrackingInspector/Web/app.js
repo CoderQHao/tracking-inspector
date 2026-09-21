@@ -8,7 +8,6 @@ let baseline = null;
 let issues = new Map();
 let analysisSignature = "";
 let preferencesReady = false;
-let editingRuleID = null;
 const native = value => window.webkit.messageHandlers.inspector.postMessage(value);
 let selected = null;
 let bridgeError = "";
@@ -27,7 +26,7 @@ function time(value) {
   return new Date(value * 1000).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 });
 }
 function currentFilter() {
-  return { query: $("search").value, action: $("action").value, page: $("page").value,
+  return { eventName: preferences.filter.eventName, query: $("search").value, action: $("action").value, page: $("page").value,
     hiddenNames: preferences.filter.hiddenNames, showHidden: $("show-hidden").checked, issuesOnly: $("issues-only").checked };
 }
 function filtered() { return filterEvents(store.visible, currentFilter(), $("device").value, issues); }
@@ -35,8 +34,9 @@ function analyze() {
   const signature = JSON.stringify([store === liveStore, store.visible.map(e => e.key), preferences.rules]);
   if (signature === analysisSignature) return;
   analysisSignature = signature;
+  const previous = JSON.stringify(issues.get(selected?.key) || []);
   issues = validateEvents(store.visible, preferences.rules);
-  renderDetail();
+  if (previous !== JSON.stringify(issues.get(selected?.key) || [])) renderDetail();
 }
 function toast(text) {
   $("toast").textContent = text;
@@ -80,6 +80,7 @@ function render() {
   options("action", store.visible.map(e => e.payload.event_info?.action), "全部动作");
   options("page", store.visible.map(e => e.payload.event_info?.current_page_name), "全部页面");
   const rows = filtered();
+  if (selected && !rows.some(e => e.key === selected.key)) { selected = null; renderDetail(); }
   $("count").textContent = rows.length;
   $("summary").textContent = `${rows.length} 条匹配 / ${store.visible.length} 条 · ${[...issues.values()].filter(v => v.length).length} 条异常`;
   $("live-label").textContent = offline ? "◇ RECORDING" : store.paused ? "Ⅱ 已暂停" : "● LIVE";
@@ -90,15 +91,14 @@ function render() {
   $("workspace-title").textContent = offline ? "记录回看" : "实时事件";
   $("recording-banner").hidden = !offline;
   $("recording-name").textContent = `${recordingName} · 实时采集仍在后台继续`;
-  $("hidden-count").textContent = preferences.filter.hiddenNames.length;
-  $("rules-count").textContent = preferences.rules.filter(r => r.enabled).length;
+  renderAnalysisControls();
   $("clear").textContent = $("device").value ? "清空此设备" : "清空全部";
   $("notice").textContent = notice;
   $("notice").hidden = !notice;
   $("retention").textContent = `最多保留 2,000 条 / 16 MB${store.trimmed ? ` · 已淘汰 ${store.trimmed} 条` : ""}${store.missed ? ` · App 缓存已错过 ${store.missed} 条` : ""}`;
   $("empty").hidden = rows.length > 0;
   $("empty").querySelector("strong").textContent = store.visible.length ? "没有符合筛选条件的事件" : "你的操作，会在这里出现";
-  const signature = `${rows.map(e => `${e.key}:${issues.get(e.key)?.length}`).join(",")}|${selected?.key}`;
+  const signature = `${rows.map(e => `${e.key}:${issues.get(e.key)?.length}`).join(",")}|${selected?.key}|${JSON.stringify(preferences.filter.hiddenNames)}`;
   if (signature === lastListSignature) return;
   lastListSignature = signature;
   const list = $("events");
@@ -116,7 +116,12 @@ function render() {
     if (issues.get(event.key)?.length) middle.append(node("span", `${issues.get(event.key).length} 异常`, "issue-badge"));
     button.append(node("div", event.deviceName, `device-label ${event.mode}`), top, middle, node("div", info.current_page_name || "未设置当前页", "event-page mono"));
     button.addEventListener("click", () => select(event));
-    fragment.append(button);
+    const entry = node("div", undefined, "event-entry");
+    const quick = node("div", undefined, "event-quick");
+    const focus = actionButton("只看", () => focusEvent(event.name)); focus.setAttribute("aria-label", `只看 ${event.name}`);
+    const excluded = preferences.filter.hiddenNames.includes(event.name);
+    const exclude = actionButton(excluded ? "恢复" : "排除", () => excludeEvent(event.name)); exclude.setAttribute("aria-label", `${excluded ? "恢复" : "排除"} ${event.name}`);
+    quick.append(focus, exclude); entry.append(button, quick); fragment.append(entry);
   }
   list.replaceChildren(fragment);
   list.scrollTop = atBottom && !store.paused ? list.scrollHeight : oldScroll;
@@ -129,18 +134,21 @@ function select(event) {
   render();
 }
 
-function renderValue(value, depth = 0) {
+function renderValue(value, depth = 0, path = "") {
   if (value !== null && typeof value === "object") {
     const container = node("div", undefined, "value-tree");
     for (const [key, child] of Object.entries(value)) {
+      const childPath = `${path}/${pointerPart(key)}`;
       if (child !== null && typeof child === "object") {
         const details = node("details");
         details.open = depth < 2;
-        details.append(node("summary", `${key}  ·  ${Object.keys(child).length} 项`, "mono"), renderValue(child, depth + 1));
+        details.append(node("summary", `${key}  ·  ${Object.keys(child).length} 项`, "mono"), renderValue(child, depth + 1, childPath));
+        details.append(fieldCheckButton(childPath));
         container.append(details);
       } else {
         const row = node("div", undefined, "field-row");
         row.append(node("span", key, "field-key mono"), node("span", child === "" ? '""' : String(child), `field-value mono ${typeof child}`));
+        row.append(fieldCheckButton(childPath));
         container.append(row);
       }
     }
@@ -150,6 +158,12 @@ function renderValue(value, depth = 0) {
   return node("span", String(value), "mono");
 }
 
+function fieldCheckButton(path) {
+  const event = selected;
+  const button = actionButton("校验", () => openRuleEditor({ event, path }), "field-check");
+  button.setAttribute("aria-label", `校验 ${fieldLabel(path)}`);
+  return button;
+}
 function renderDetail() {
   $("detail").hidden = !selected;
   $("detail-empty").hidden = !!selected;
@@ -165,7 +179,9 @@ function renderDetail() {
   const fragment = document.createDocumentFragment();
   for (const [key, value] of Object.entries(selected.payload)) {
     const group = node("section", undefined, "field-group");
-    group.append(node("h4", key, "mono"), renderValue(value));
+    const heading = node("div", undefined, "field-group-heading");
+    heading.append(node("h4", key, "mono"), fieldCheckButton(`/${pointerPart(key)}`));
+    group.append(heading, renderValue(value, 0, `/${pointerPart(key)}`));
     fragment.append(group);
   }
   $("fields").replaceChildren(fragment);
@@ -173,7 +189,7 @@ function renderDetail() {
   const messages = issues.get(selected.key) || [];
   $("event-issues").hidden = !messages.length;
   $("event-issues").replaceChildren(...messages.map(issue => node("div", `${issue.name}：${issue.message}`)));
-  $("hide-event").textContent = preferences.filter.hiddenNames.includes(selected.name) ? "取消隐藏此类事件" : "隐藏此类事件";
+  $("hide-event").textContent = preferences.filter.hiddenNames.includes(selected.name) ? "恢复此事件" : "排除此事件";
   $("baseline-label").textContent = baseline ? `基准：${baseline.deviceName} #${baseline.id}` : "先设置基准，再选择另一条事件";
   $("clear-baseline").hidden = !baseline;
   renderDiff();
@@ -191,7 +207,7 @@ function refresh() {
 }
 const poller = new DevicePoller(liveStore, native, refresh, message => { bridgeError = message; });
 
-for (const id of ["search", "action", "page", "device"]) $(id).addEventListener(id === "search" ? "input" : "change", () => { render(); persistPreferences(); });
+for (const id of ["search", "action", "page", "device"]) $(id).addEventListener(id === "search" ? "input" : "change", filterDidChange);
 $("pause").onclick = () => { store.togglePause(); render(); };
 $("clear").onclick = () => { store.clear($("device").value); refresh(); };
 $("latest").onclick = () => { const latest = filtered().at(-1); if (latest) select(latest); $("events").scrollTop = $("events").scrollHeight; };
@@ -246,121 +262,12 @@ function renderDiff() {
 }
 $("set-baseline").onclick = () => { baseline = selected; detailMode = "diff"; renderDetail(); toast("基准已固定，请选择另一条事件"); };
 $("clear-baseline").onclick = () => { baseline = null; renderDetail(); };
-$("hide-event").onclick = () => {
-  const hidden = preferences.filter.hiddenNames;
-  if (hidden.includes(selected.name)) preferences.filter.hiddenNames = hidden.filter(name => name !== selected.name);
-  else if (hidden.length >= AnalysisLimits.hidden) { toast("最多隐藏 100 种事件"); return; }
-  else hidden.push(selected.name);
-  persistPreferences(); renderDetail(); render();
-};
-function applyFilter(filter) {
-  preferences.filter = normalizeFilter(filter);
-  $("search").value = filter.query;
-  options("action", [filter.action], "全部动作"); $("action").value = filter.action;
-  options("page", [filter.page], "全部页面"); $("page").value = filter.page;
-  $("show-hidden").checked = filter.showHidden;
-  $("issues-only").checked = filter.issuesOnly;
-}
-function persistPreferences() {
-  if (!preferencesReady) return;
-  preferences.filter = currentFilter();
-  try {
-    const text = JSON.stringify(normalizePreferences(preferences));
-    native({ command: "savePreferences", text }).catch(error => toast(`设置保存失败：${error.message}`));
-  } catch (error) { toast(error.message); }
-}
-function renderPresets() {
-  const current = $("presets").value;
-  $("presets").replaceChildren(new Option("筛选预设…", ""), ...preferences.presets.map(p => new Option(p.name, p.id)));
-  $("presets").value = current;
-  $("preset-list").replaceChildren(...preferences.presets.map(preset => managedRow(preset.name, "", [
-    ["应用", () => { applyFilter(preset.filter); persistPreferences(); render(); $("filters-dialog").close(); }],
-    ["覆盖", () => { preset.filter = normalizeFilter(currentFilter()); persistPreferences(); toast("已用当前筛选更新预设"); }],
-    ["删除", () => { preferences.presets = preferences.presets.filter(p => p.id !== preset.id); persistPreferences(); renderPresets(); }],
-  ])));
-  if (!preferences.presets.length) $("preset-list").append(node("p", "尚未保存预设。", "subtle"));
-  $("hidden-list").replaceChildren(...preferences.filter.hiddenNames.map(name => managedRow(name, "", [["恢复显示", () => {
-    preferences.filter.hiddenNames = preferences.filter.hiddenNames.filter(n => n !== name);
-    persistPreferences(); renderPresets(); renderDetail(); render();
-  }]])));
-  if (!preferences.filter.hiddenNames.length) $("hidden-list").append(node("p", "在事件详情点击「隐藏此类事件」即可加入。", "subtle"));
-}
-function managedRow(title, subtitle, actions) {
-  const row = node("div", undefined, "managed-row");
-  const text = node("div", title, "managed-text"); if (subtitle) text.append(node("small", subtitle));
-  row.append(text);
-  for (const [label, action] of actions) { const button = node("button", label); button.type = "button"; button.onclick = action; row.append(button); }
-  return row;
-}
-for (const id of ["show-hidden", "issues-only"]) $(id).onchange = () => { persistPreferences(); render(); };
-$("presets").onchange = () => {
-  const preset = preferences.presets.find(p => p.id === $("presets").value);
-  if (preset) { applyFilter(preset.filter); persistPreferences(); render(); }
-};
-for (const id of ["filters-button", "save-preset"]) $(id).onclick = () => { renderPresets(); $("filters-dialog").showModal(); if (id === "save-preset") $("preset-name").focus(); };
-$("preset-form").onsubmit = event => {
-  event.preventDefault();
-  try {
-    if (preferences.presets.length >= AnalysisLimits.presets) throw new Error("最多保存 20 个预设。");
-    const name = $("preset-name").value.trim();
-    if (!name) throw new Error("请填写预设名称。");
-    preferences = normalizePreferences({ ...preferences, presets: [...preferences.presets, { id: crypto.randomUUID(), name, filter: normalizeFilter(currentFilter()) }] });
-    persistPreferences(); renderPresets(); $("preset-name").value = ""; toast("已保存筛选预设");
-  } catch (error) { toast(error.message); }
-};
-for (const button of document.querySelectorAll('[data-close]')) button.onclick = () => button.closest('dialog').close();
-function ruleFields() {
-  const kind = $("rule-kind").value;
-  $("rule-path-row").hidden = kind === "duplicate";
-  $("rule-type-row").hidden = kind !== "type";
-  $("rule-values-row").hidden = kind !== "enum";
-  $("rule-window-row").hidden = $("rule-keys-row").hidden = kind !== "duplicate";
-}
-function resetRule() { editingRuleID = null; $("rule-form").reset(); $("rule-form-title").textContent = "新增规则"; $("rule-error").textContent = ""; ruleFields(); }
-function editRule(rule) {
-  editingRuleID = rule.id;
-  for (const key of ["name", "event", "kind", "path", "type"]) if (rule[key] !== undefined) $(`rule-${key}`).value = rule[key];
-  $("rule-values").value = JSON.stringify(rule.values || []);
-  $("rule-window").value = rule.windowMs || 500;
-  $("rule-keys").value = (rule.keyPaths || []).join(", ");
-  $("rule-form-title").textContent = `编辑：${rule.name}`;
-  $("rule-error").textContent = ""; ruleFields(); $("rule-name").focus();
-}
-function renderRules() {
-  const kinds = { required: "必填", type: "类型", enum: "允许值", duplicate: "重复" };
-  $("rule-list").replaceChildren(...preferences.rules.map(rule => {
-    const row = managedRow(rule.name, `${rule.event} · ${kinds[rule.kind]} · ${rule.path || `${rule.windowMs} ms`}`, [
-      [rule.enabled ? "停用" : "启用", () => { rule.enabled = !rule.enabled; persistPreferences(); renderRules(); render(); }],
-      ["编辑", () => editRule(rule)],
-      ["删除", () => { preferences.rules = preferences.rules.filter(r => r.id !== rule.id); if (editingRuleID === rule.id) resetRule(); persistPreferences(); renderRules(); render(); }],
-    ]);
-    return row;
-  }));
-  if (!preferences.rules.length) $("rule-list").append(node("p", "暂无规则，按你的埋点约定添加。", "subtle"));
-}
-$("rules-button").onclick = () => { renderRules(); $("rules-dialog").showModal(); };
-$("rule-kind").onchange = ruleFields;
-$("rule-reset").onclick = resetRule;
-$("rule-form").onsubmit = event => {
-  event.preventDefault();
-  try {
-    if (!editingRuleID && preferences.rules.length >= AnalysisLimits.rules) throw new Error("最多保存 50 条规则。");
-    const input = { id: editingRuleID || crypto.randomUUID(), name: $("rule-name").value.trim(), event: $("rule-event").value.trim() || "*", kind: $("rule-kind").value,
-      path: $("rule-path").value.trim(), type: $("rule-type").value, windowMs: Number($("rule-window").value), keyPaths: $("rule-keys").value.split(",").map(v => v.trim()).filter(Boolean),
-      enabled: preferences.rules.find(r => r.id === editingRuleID)?.enabled ?? true };
-    if (input.kind === "enum") { try { input.values = JSON.parse($("rule-values").value); } catch { throw new Error('允许值请填写 JSON 数组，例如 ["click", "view"]。'); } }
-    const rule = normalizeRule(input);
-    const rules = editingRuleID ? preferences.rules.map(r => r.id === editingRuleID ? rule : r) : [...preferences.rules, rule];
-    preferences = normalizePreferences({ ...preferences, rules });
-    persistPreferences(); resetRule(); renderRules(); render(); toast("规则已保存并应用");
-  } catch (error) { $("rule-error").textContent = error.message; }
-};
 document.addEventListener("keydown", event => { if ((event.metaKey || event.ctrlKey) && event.key === "k") { event.preventDefault(); $("search").focus(); } });
 async function start() {
   try { preferences = normalizePreferences(JSON.parse(await native({ command: "loadPreferences" }))); applyFilter(preferences.filter); }
   catch { toast("已保存的设置无法读取，当前使用默认设置。"); }
   preferencesReady = true;
-  renderPresets(); ruleFields(); render(); poller.tick();
+  initAnalysisWorkspace(); render(); poller.tick();
   setInterval(() => poller.tick(), 250);
 }
 start();

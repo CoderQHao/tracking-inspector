@@ -10,14 +10,14 @@
 - **局域网**：手机复制完整连接信息，Mac 点击「粘贴并连接」即可配对。也支持 Bonjour 自动发现及手动填写 IP、端口和配对码。
 - **独立运行**：使用系统的 USB 服务、Network.framework 和 WKWebView，不需要 Python、Homebrew、浏览器服务或第三方运行时。
 - **多设备**：最多同时连接 8 台，验证身份后自动合并同一手机的 USB、Bonjour 和手动连接；优先 USB，已配对的局域网作为备用。
-- **事件分析**：字段对比、噪声隐藏、筛选预设、自定义必填 / 类型 / 允许值 / 重复触发规则。
+- **事件分析**：字段对比、一键只看或排除事件、保存筛选，从参数直接创建校验并预览异常。
 - **记录回看**：保存当前记录或筛选结果，打开历史 JSON 后继续搜索、对比和校验。
 
 > 这是观察客户端事件的工具。iOS App 需要接入 [采集协议](Docs/protocol.md)，它不能直接读取任意 App 的埋点；事件出现也不代表服务端接收成功。
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/CoderQHao/tracking-inspector/releases/latest) 下载 `Tracking-Inspector-0.3.0-universal.dmg`，打开后将应用拖到 `Applications`。DMG 同时支持 Apple Silicon 和 Intel；运行不需要开发环境。
+从 [GitHub Releases](https://github.com/CoderQHao/tracking-inspector/releases/latest) 下载 `Tracking-Inspector-0.3.1-universal.dmg`，打开后将应用拖到 `Applications`。DMG 同时支持 Apple Silicon 和 Intel；运行不需要开发环境。
 
 当前是 ad-hoc 签名的开发版本，尚未经过 Developer ID 签名与 Apple 公证；其他 Mac 下载后可能被 Gatekeeper 拦截。Release 提供 `SHA256SUMS` 校验文件，签名与公证仍是后续正式分发需要补齐的部分。
 
@@ -41,6 +41,12 @@
 
 ![记录回看、字段对比和校验结果](Docs/images/event-analysis.png)
 
+筛选条件直接展示，排除可撤销；保存前预览规则会命中哪些记录。
+
+![可见的筛选条件与一键操作](Docs/images/contextual-filters.png)
+
+![从字段创建规则并预览异常](Docs/images/guided-rules.png)
+
 ## 使用
 
 1. 打开 `Tracking Inspector.app`。
@@ -62,10 +68,14 @@ Bonjour 不需要固定 IP。手动地址会保存到本机，手机换网络或
 ## 对比、筛选与校验
 
 - 选中事件后点击「设为对比基准」，再选择另一条事件。「事件对比」展示事件名和参数中新增、缺失、值或类型变化的字段；数组按索引比较，基准保留到取消或切换记录。
-- 点击「隐藏此类事件」隐藏同名事件。「显示已隐藏」可临时查看，「隐藏事件」中可恢复。点击「保存筛选」创建预设，保存搜索、动作、页面、隐藏列表和异常开关；设备选择不包含在预设内。可以覆盖或删除已有预设。
-- 「校验规则」支持新增、编辑、停用和删除。事件名支持 `*` 通配符，参数路径相对于 `payload`，支持 `content_info.id` 或 JSON Pointer `/content_info/id`（包含点号的键用后者）。
-- **必填**检查字段存在，`null` 和空字符串仍视为存在；**类型**支持 string / number / integer / boolean / object / array / null；**允许值**填写 JSON 数组，例如 `["recommendation", "search"]`。类型和允许值只检查已存在字段，需要时另加必填规则。
-- **重复触发**在同一设备、同一会话、同名事件内比较，窗口 1–60,000 ms。可指定多个参数路径作为判重依据，留空则比较完整参数；后一次触发显示关联事件编号。它只分析当前保留的记录，不能判断已经淘汰或未采集的事件。
+- 在事件行或详情点击「只看」或「排除」，列表上方会展示正在生效的条件。点击条件的 × 移除，或点击「撤销上一步」恢复。打开「事件筛选」可以搜索事件类型、查看数量、恢复排除；排除只影响显示，记录仍会保留。
+- 点击「保存筛选」确认条件摘要、填写名称即可保存；下次从工具栏下拉框直接选择。保存事件名、搜索、动作、页面、排除列表和异常开关，设备选择保持独立。修改已保存筛选后显示「已修改」，点击「更新此筛选」保存变化；「重置」回到全部事件。
+- 在参数旁点击「校验」，自动带入事件、字段和样本值，选择检查条件后即可保存。右侧预览打开面板时已有记录的匹配、通过和异常数量，以及具体原因；保存后继续检查新事件。也可以从「检查规则」管理已有规则或新建规则。
+- **字段不能为空**检查缺失、null、空文本、空数组和空对象，0 和 false 有效；**字段必须存在**只检查是否存在，兼容旧版必填规则。
+- **类型**从中文选项中选择期望类型；**允许值**点选记录里出现过的值，或逐项输入，无需手填 JSON。两者可直接勾选「字段缺失时也报错」。旧规则保持原来的可选字段语义。
+- **更多设置**中可自定义名称、用 `*` 通配符匹配一批事件。日常从字段点选不需要输入路径；尚未出现的字段可手动填写 `content_info.id` 或 JSON Pointer `/content_info/id`（键含点号时用后者）。
+
+- **重复触发**在同一设备、同一会话、同名事件内比较，窗口 0.001–60 秒。可指定多个参数路径作为判重依据，留空则比较完整参数；后一次触发显示关联事件编号。它只分析当前保留的记录，不能判断已经淘汰或未采集的事件。
 - 异常会出现在事件行和详情中，也可以勾选「只看异常」。最多保存 50 条规则、20 个预设、100 种隐藏事件；设置总大小限制 256 KiB。
 
 ## 保存和回看
@@ -90,7 +100,7 @@ bash Scripts/build-dmg.sh
 
 - `dist/Tracking Inspector.app`
 - `dist/Tracking-Inspector.zip`
-- `dist/Tracking-Inspector-0.3.0-universal.dmg`（运行 DMG 脚本后）
+- `dist/Tracking-Inspector-0.3.1-universal.dmg`（运行 DMG 脚本后）
 - `dist/SHA256SUMS`
 
 默认使用 ad-hoc 签名，适合本地开发。仓库产物尚未做 Developer ID 签名与 Apple 公证；下载到其他 Mac 时，Gatekeeper 可能拦截。正式分发需使用自己的 Developer ID 并完成公证，脚本支持 `SIGNING_IDENTITY`，不会自动选择证书或执行公证。
@@ -106,7 +116,7 @@ swift test --build-system native --enable-swift-testing --disable-xctest
 node --test Tests/*.test.mjs
 ```
 
-Node.js 只用于开发时测试事件缓存；运行应用不需要 Node.js。Swift Testing 覆盖 HTTP/TLS、设备身份合并、USB 优先与拔线切换、地址复用、重新配对的旧回包隔离。JavaScript 测试覆盖缓存与合并、字段差异、筛选、预设、四类校验规则，以及新旧记录格式导入和容量限制。
+Node.js 只用于开发时测试事件缓存；运行应用不需要 Node.js。Swift Testing 覆盖 HTTP/TLS、设备身份合并、USB 优先与拔线切换、地址复用、重新配对的旧回包隔离。JavaScript 测试覆盖缓存与合并、字段差异、筛选、预设、五类校验规则及旧设置兼容，以及新旧记录格式导入和容量限制。
 
 ## 数据与连接
 
