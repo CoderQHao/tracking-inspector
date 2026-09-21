@@ -7,7 +7,7 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - run: swift test --build-system native --enable-swift-testing --disable-xctest
+      - run: xcodebuild -project TrackingInspector.xcodeproj -scheme TrackingInspector -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/xcode test
       - run: node --test Tests/*.test.mjs
       - run: bash Scripts/build-dmg.sh
       - uses: actions/upload-artifact@v4

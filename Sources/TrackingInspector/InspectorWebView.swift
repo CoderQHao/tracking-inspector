@@ -25,9 +25,7 @@ struct InspectorWebView: NSViewRepresentable {
         let web = WKWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = context.coordinator
         web.allowsBackForwardNavigationGestures = false
-        let root = Bundle.main.resourceURL?.appendingPathComponent("Web")
-        let bundled = root.flatMap { FileManager.default.fileExists(atPath: $0.appendingPathComponent("index.html").path) ? $0 : nil }
-        let directory = bundled ?? Bundle.module.url(forResource: "Web", withExtension: nil)!
+        let directory = Bundle.main.url(forResource: "Web", withExtension: nil)!
         context.coordinator.root = directory.standardizedFileURL
         web.loadFileURL(directory.appendingPathComponent("index.html"), allowingReadAccessTo: directory)
         return web

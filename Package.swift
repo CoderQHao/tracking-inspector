@@ -2,12 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "TrackingInspector",
+    name: "InspectorCore",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "TrackingInspector", targets: ["TrackingInspector"])],
+    products: [.library(name: "InspectorCore", targets: ["InspectorCore"])],
     targets: [
         .target(name: "InspectorCore"),
-        .executableTarget(name: "TrackingInspector", dependencies: ["InspectorCore"], resources: [.copy("Web")]),
         .testTarget(name: "InspectorCoreTests", dependencies: ["InspectorCore"]),
     ]
 )

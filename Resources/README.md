@@ -2,7 +2,7 @@
 
 `AppIcon.png` is the master artwork, generated with the built-in OpenAI ImageGen tool. It contains alpha transparency outside the macOS rounded-square tile. No external brand assets are used.
 
-`Scripts/build-icon.sh` uses macOS `sips` and `iconutil` to produce all standard / Retina representations from 16 to 1024 pixels. `Scripts/build-app.sh` places the resulting `AppIcon.icns` in the application bundle before signing it. `CFBundleIconFile` declares the icon for Finder, Dock and application lists. No additional runtime dependency is required.
+`Assets.xcassets/AppIcon.appiconset` contains the standard and Retina macOS icon sizes derived from the master artwork. Xcode compiles the asset catalog and includes the application icon automatically. Edit the AppIcon set in Xcode when changing the icon; keep the master artwork above in sync. No icon-generation script is required for building or running the app.
 
 Final generation prompt:
 

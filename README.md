@@ -33,3 +33,9 @@ iOS App 需接入 [采集协议](Docs/protocol.md)。
 4. 操作手机，查看事件；选中一条事件「设为对比基准」，再选另一条即可比较。
 
 无线连接失败时检查局域网权限、地址和配对码，以及 VPN 是否允许局域网流量。iOS 挂起 App 时读取会暂停，恢复运行后自动重连。
+
+## Xcode 开发
+
+使用 Xcode 16+ 打开 `TrackingInspector.xcodeproj`，选择 `TrackingInspector` scheme 和 `My Mac`：`⌘R` 运行、`⌘U` 测试、`Product → Archive` 归档。默认本机签名，无需配置开发者账号。
+
+版本号在 App target 的 `General` 中修改；图标位于 `Resources/Assets.xcassets`，核心逻辑为本地 `InspectorCore` Package。执行 `bash Scripts/build-dmg.sh` 可通过同一工程生成 DMG。

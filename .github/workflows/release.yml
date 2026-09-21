@@ -9,16 +9,16 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - run: xcodebuild -project TrackingInspector.xcodeproj -scheme TrackingInspector -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/xcode test
+      - run: node --test Tests/*.test.mjs
+      - run: bash Scripts/build-dmg.sh
       - name: Validate release version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' 'dist/Tracking Inspector.app/Contents/Info.plist')
           test "$RELEASE_TAG" = "v$version"
           test -f "Docs/releases/$RELEASE_TAG.md"
-      - run: swift test --build-system native --enable-swift-testing --disable-xctest
-      - run: node --test Tests/*.test.mjs
-      - run: bash Scripts/build-dmg.sh
       - name: Publish DMG and checksums
         env:
           GH_TOKEN: ${{ github.token }}
