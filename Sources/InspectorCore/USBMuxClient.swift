@@ -35,7 +35,7 @@ public enum USBMuxClient {
         let socket = try MuxSocket()
         let result = try socket.command("Connect", values: ["DeviceID": device.id, "PortNumber": InspectorProtocol.usbPort.bigEndian])
         guard result["Number"] as? Int == 0 else {
-            throw InspectorFailure("USB 已连接，等待 App 中的调试采集端。请运行 Debug App 并继续执行断点。")
+            throw InspectorFailure("USB 已连接，暂时无法连接手机 App。\n请打开手机 App，工具会自动重试。")
         }
         try socket.send(InspectorProtocol.request(after: after, session: session))
         var parser = HTTPResponseParser()

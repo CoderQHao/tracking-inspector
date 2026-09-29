@@ -191,6 +191,55 @@ struct CaptureRecordingTests {
         #expect(rows(model).isEmpty)
     }
 
+    @Test func failedDeviceBacksOffWithoutBlockingOthersAndExplicitActionsRetry() async throws {
+        let prefs = try #require(UserDefaults(suiteName: "CaptureTests.\(UUID())"))
+        let address = "127.0.0.1:31006"
+        let code = "00112233445566778899aabbccddeeff"
+        var failedCalls = 0
+        let model = InspectorModel(defaults: prefs) { endpoint, _, after, _ in
+            if endpoint.id == "manual:\(address)" {
+                failedCalls += 1
+                throw InspectorFailure("offline fixture")
+            }
+            return batch([after + 1], session: "healthy")
+        }
+        defer { model.stop() }
+        try model.addManualDevice(address: address, code: code)
+        try model.addManualDevice(address: "127.0.0.1:31007", code: code)
+        model.startCapture()
+        try await waitUntil { rows(model).count >= 3 }
+        #expect(failedCalls == 1)
+        #expect(model.connectedDeviceCount == 1)
+
+        model.pair("manual:\(address)", code: code)
+        try await waitUntil { failedCalls == 2 }
+        try await Task.sleep(nanoseconds: 800_000_000)
+        #expect(failedCalls == 2)
+
+        try model.addManualDevice(address: address, code: code)
+        try await waitUntil { failedCalls == 3 }
+        let device = try #require(model.displayDevices.first { $0.id == "manual:\(address)" })
+        model.setEnabled(false, device: device)
+        model.setEnabled(true, device: device)
+        try await waitUntil { failedCalls == 4 }
+    }
+
+    @Test func failedDeviceAutomaticallyRetriesAfterCooldown() async throws {
+        let prefs = try #require(UserDefaults(suiteName: "CaptureTests.\(UUID())"))
+        var calls = 0
+        let model = InspectorModel(defaults: prefs) { _, _, _, _ in
+            calls += 1
+            throw InspectorFailure("offline fixture")
+        }
+        defer { model.stop() }
+        try model.addManualDevice(address: "127.0.0.1:31008", code: "00112233445566778899aabbccddeeff")
+        model.startCapture()
+        try await waitUntil { calls == 1 }
+        try await Task.sleep(nanoseconds: 10_100_000_000)
+        try await waitUntil { calls >= 2 }
+        #expect(calls == 2)
+    }
+
     @Test func slowDeviceDoesNotBlockOthersAndLateCompletionAfterStopIsRejected() async throws {
         let defaults = try #require(UserDefaults(suiteName: "CaptureTests.\(UUID())"))
         var pending: CheckedContinuation<[String: Any], Error>?

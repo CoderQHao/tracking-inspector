@@ -90,7 +90,12 @@ public final class InspectorModel: ObservableObject {
     public func setEnabled(_ enabled: Bool, device: InspectorDevice) {
         autoSelect = false
         if enabled {
-            do { try channels.enable(device.id); names[device.id] = device.name }
+            do {
+                try channels.enable(device.id)
+                names[device.id] = device.name
+                for endpoint in endpoints(for: device.id) { failedUntil.removeValue(forKey: endpoint.id) }
+                nextReads.removeValue(forKey: device.id)
+            }
             catch { setStatus(error.localizedDescription, for: device.id) }
         } else {
             channels.disable(device.id)
@@ -109,6 +114,7 @@ public final class InspectorModel: ObservableObject {
                 failedUntil.removeValue(forKey: endpoint.id)
             }
             cancelRequest(id)
+            nextReads.removeValue(forKey: id)
             setStatus("正在验证配对…", for: id)
         } catch { setStatus(error.localizedDescription, for: id) }
     }
@@ -126,7 +132,9 @@ public final class InspectorModel: ObservableObject {
         mergeDevices()
         keys[address.id] = code
         failedUntil.removeValue(forKey: address.id)
-        cancelRequest(identities.group(for: address.id))
+        let group = identities.group(for: address.id)
+        cancelRequest(group)
+        nextReads.removeValue(forKey: group)
         saveSelection()
     }
 
@@ -265,7 +273,14 @@ public final class InspectorModel: ObservableObject {
                         setStatus(error.localizedDescription, for: id)
                     }
                 }
-                nextReads[id] = Date().addingTimeInterval(channel.connected && channel.cursor < channel.latestID ? 0.05 : 0.6)
+                let delay = channel.connected && channel.cursor < channel.latestID ? 0.05 : 0.6
+                let nextRead = Date().addingTimeInterval(delay)
+                let retryDates = endpoints(for: id)
+                    .filter { $0.mode == "usb" || self.keys[$0.id] != nil }
+                    .map { self.failedUntil[$0.id, default: .distantPast] }
+                // When every route failed, wait for the first route's cooldown.
+                // Sorting failed routes alone still retried them every polling tick.
+                nextReads[id] = channel.connected ? nextRead : max(nextRead, retryDates.min() ?? .distantPast)
                 updateConnectedCount()
             }
             captureTasks[id] = (channel, token, task)
@@ -337,8 +352,10 @@ public final class InspectorModel: ObservableObject {
         let options = endpoints(for: id)
         let modes = Set(options.map(\.mode))
         let available = [modes.contains("usb") ? "USB" : nil, modes.contains("lan") ? "局域网" : nil].compactMap { $0 }.joined(separator: " + ")
-        guard let active = activeEndpoints[id], let endpoint = options.first(where: { $0.id == active }) else { return available }
-        return "\(available) · 当前 \(endpoint.mode == "usb" ? "USB" : "局域网")"
+        guard !available.isEmpty else { return "" }
+        let summary = "连接方式：\(available)"
+        guard modes.count > 1, let active = activeEndpoints[id], let endpoint = options.first(where: { $0.id == active }) else { return summary }
+        return "\(summary) · 当前：\(endpoint.mode == "usb" ? "USB" : "局域网")"
     }
 
     private func candidates(for id: String) -> [InspectorDevice] {

@@ -110,6 +110,11 @@ private struct DeviceSidebar: View {
             Text(model.discoveryStatus).font(.caption).foregroundStyle(.secondary)
             Text("每台局域网设备需单独配对。自动发现不可用时，可粘贴手机连接信息。\n连接验证后，同一手机自动合并；优先 USB，断开后尝试已配对的局域网。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup("连接帮助") {
+                Text("如果正在使用 Xcode 调试，请确认手机 App 没有停在断点。")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.caption).foregroundStyle(.secondary)
         }
         .padding(16)
         .background(Color(nsColor: .windowBackgroundColor))

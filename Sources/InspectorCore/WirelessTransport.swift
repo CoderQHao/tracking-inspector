@@ -64,6 +64,7 @@ private final class NetworkTransaction: @unchecked Sendable {
     private var continuation: CheckedContinuation<Data, Error>?
     private var parser = HTTPResponseParser()
     private var finished = false
+    private var waitingError: NWError?
 
     init(endpoint: NWEndpoint, parameters: NWParameters) {
         connection = NWConnection(to: endpoint, using: parameters)
@@ -78,28 +79,25 @@ private final class NetworkTransaction: @unchecked Sendable {
                     guard let self, !self.finished else { return }
                     switch state {
                     case .ready:
+                        self.waitingError = nil
                         connection.send(content: request, completion: .contentProcessed { [weak self] error in
                             guard let self else { return }
                             if let error { finish(.failure(error)) } else { receive() }
                         })
-                    case let .failed(error), let .waiting(error):
-                        let message: String
-                        switch error {
-                        case .tls:
-                            message = "加密握手失败，请核对手机当前的配对码，并检查 VPN 或代理是否影响局域网连接。"
-                        case .posix(.ECONNREFUSED):
-                            message = "设备拒绝连接，请刷新手机上的连接地址，并确认无线读取仍开启。"
-                        case .dns:
-                            message = "无法解析设备地址，请检查局域网权限，或使用手机显示的地址手动连接。"
-                        default:
-                            message = "局域网连接失败（\(error.localizedDescription)）。请检查连接地址、网络互通和局域网权限。"
-                        }
-                        finish(.failure(InspectorFailure(message)))
+                    case let .waiting(error):
+                        // Network.framework can recover this connection after a path
+                        // change or local-network permission grant. Keep the existing
+                        // six-second deadline rather than cancelling at the first wait.
+                        self.waitingError = error
+                    case let .failed(error):
+                        finish(.failure(connectionFailure(error)))
                     default: break
                     }
                 }
                 queue.asyncAfter(deadline: .now() + 6) { [weak self] in
-                    self?.finish(.failure(InspectorFailure("局域网连接超时。请检查地址和网络互通，并保持 App 在前台且未停在断点。")))
+                    guard let self, !finished else { return }
+                    if let waitingError { finish(.failure(connectionFailure(waitingError))) }
+                    else { finish(.failure(InspectorFailure("局域网连接超时。请检查地址和网络互通，并保持 App 在前台且未停在断点。"))) }
                 }
                 connection.start(queue: queue)
             }
@@ -108,6 +106,24 @@ private final class NetworkTransaction: @unchecked Sendable {
 
     func cancel() {
         queue.async { self.finish(.failure(CancellationError())) }
+    }
+
+    private func connectionFailure(_ error: NWError) -> InspectorFailure {
+        if connection.currentPath?.unsatisfiedReason == .localNetworkDenied {
+            return InspectorFailure("macOS 未允许本地网络访问。请在「系统设置 → 隐私与安全 → 本地网络」中允许 Tracking Inspector。")
+        }
+        switch error {
+        case .tls:
+            return InspectorFailure("加密握手失败，请核对手机当前的配对码，并检查 VPN 或代理是否影响局域网连接。")
+        case .posix(.ECONNREFUSED):
+            return InspectorFailure("设备拒绝连接，请刷新手机上的连接地址，并确认无线读取仍开启。")
+        case .posix(.EHOSTDOWN), .posix(.EHOSTUNREACH), .posix(.ENETUNREACH):
+            return InspectorFailure("暂时无法到达手机地址，尚未验证配对码。请核对手机当前地址，并确认两台设备可通过局域网互相访问。")
+        case .dns:
+            return InspectorFailure("无法解析设备地址，请检查局域网权限，或使用手机显示的地址手动连接。")
+        default:
+            return InspectorFailure("局域网连接失败（\(error.localizedDescription)）。请检查连接地址、网络互通和局域网权限。")
+        }
     }
 
     private func receive() {
